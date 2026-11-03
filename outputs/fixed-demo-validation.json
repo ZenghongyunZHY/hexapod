@@ -1,0 +1,132 @@
+{
+  "date": "2026-10-14",
+  "deployment": "/home/hexapod/hexapod_ws/src/hexapod_demo",
+  "executables": [
+    "stand_demo",
+    "walk_demo"
+  ],
+  "frames": "config/poses.csv",
+  "candidate_standing": {
+    "revision": "v2-higher-larger-faster-2026-10-14",
+    "right": [
+      500,
+      550,
+      200
+    ],
+    "left": [
+      500,
+      450,
+      800
+    ],
+    "measured_or_physically_verified": false,
+    "cad_planar_height_estimate_mm": {
+      "from_upper_pitch_axis_to_metal_endpoint": 82.03,
+      "prior_candidate": 61.12,
+      "increase": 20.9,
+      "excludes": "root mounting height, rubber contact and actual dimensional calibration"
+    }
+  },
+  "walking_complete_cycles": 6,
+  "walking_swing_landings": 12,
+  "additional_recovery": "two tripods return to neutral, without support-tripod advance",
+  "total_motion_frames_in_walk_program": 44,
+  "verification": {
+    "pi_release_build": "passed",
+    "cpp_protocol_and_sequence_test": "passed",
+    "virtual_uart_preflight_failures": "passed: persistent missing ID, duplicate ID, malformed count, overvoltage, timeout",
+    "virtual_uart_read_only_probe": "passed: no motion",
+    "virtual_uart_sigint": "passed: in-flight move replaced by measured-position hold",
+    "virtual_uart_full_run": "passed: exactly cycles 1..6; identical standing first/last; no action groups/unload",
+    "source_hashes_match": true,
+    "physical_uart_probe": "passed: 8259mV and all 18 real servo positions; read-only",
+    "physical_motion_commands_sent": false,
+    "physical_standing_verified": false,
+    "physical_walking_verified": false,
+    "voltage_boundary_tests": {
+      "5999": "rejected",
+      "6000": "accepted",
+      "8661": "accepted",
+      "8700": "accepted",
+      "8701": "rejected",
+      "transport": "virtual UART; no real motion"
+    },
+    "rebuilt_and_full_tests_after_voltage_change": "passed",
+    "virtual_uart_missing_id_retry": "passed: transient missing ID7 recovered by targeted query, including after first motion frame in virtual full walk",
+    "rebuilt_and_full_tests_after_stance_and_retry_change": "passed"
+  },
+  "disk": {
+    "entire_pi_workspace": "2.7 MiB measured after v2 build/test",
+    "available_pi_filesystem": "about 51 GiB"
+  },
+  "source_sha256": {
+    "CMakeLists.txt": "c62fef2da4ef5dfaf24706bf73d067f403cd0869367834fb1b33e4f70ca43d69",
+    "package.xml": "9106d99cc10e3a4e3d49921eda5a2cd30f4d5d82aa62f9e467074804e776f51d",
+    "README.md": "08b37206268b48d7e0ff8f4e5e8c7b0976ed4899f76050d2891ff32100ac6737",
+    "config/poses.csv": "3d4c7239fbc5bf6f31868f5098894eebdde130c855747ab11d4f64d855d15ce2",
+    "config/profile.json": "b9f4594d7a78c2dc7c4d1906a4ee737d4b73db6444b284cb8a864fad6cab965f",
+    "src/controller.cpp": "f3e484869219598f62019084253214954e7d885e8e15de66bcd1381bb2343261",
+    "src/demo.cpp": "e22758fec98f0cf0cf7cbfb86c8eded3e9bf4e7381280d45b30a8f816ca70eb8",
+    "src/stand_demo.cpp": "0f9764a3f81795a3bf66ec21e38bab06978568959b52594913caeff91d9cf7eb",
+    "src/walk_demo.cpp": "974cb98ed49c306cb90d6ce8970c9bd06f0d5001ad917c26e30241f01ea70636",
+    "test/demo_tests.cpp": "e42675ca46315ced1aef52511ee12a9734a157ae1dd2b13ee20f8956f395be86",
+    "test/serial_integration.py": "65cbcd576c7e6ba5790878513506131f199689fa2f35adac0d6b68986e63090e",
+    "include/hexapod_demo/demo.hpp": "0c6dbe1c2dd68393465493857524950ad0ba16108f11537a7c0b6c2c26e1eee2"
+  },
+  "demo_voltage_allowance_mv": [
+    6000,
+    8700
+  ],
+  "datasheet_voltage_range_mv": [
+    6000,
+    8400
+  ],
+  "voltage_allowance_source": "Explicit user request 2026-10-14 for this demo",
+  "latest_user_uart_observation": "Walk preflight read 18 servos at 8504mV; stopped after initial standing frame with Expected 18 position responses. User subsequently reports standing too low and requests higher stance, larger steps and faster motion.",
+  "gait_revision": {
+    "hip_sweep_position_magnitude": 35,
+    "lift_candidate": {
+      "femur_position_delta_magnitude": 35,
+      "knee_position_delta_magnitude": 15
+    },
+    "phase_timing_ms": {
+      "lift": 300,
+      "swing_or_recenter": 400,
+      "land": 300,
+      "settle": 100,
+      "standing_transition": 3000,
+      "standing_settle": 600
+    },
+    "estimated_total_ms": 32000,
+    "prior_estimated_total_ms": 40400
+  },
+  "position_read_recovery": {
+    "diagnostic": "Read-only real UART captured valid count17 response missing ID7, followed by complete count18 responses; subsets also complete.",
+    "fix": "Within original overall query deadline, read missing IDs up to two additional attempts; never use cached/default positions. Reject malformed and duplicate IDs.",
+    "physical_motion_commands_sent_by_agent": false
+  },
+  "physical_probe": {
+    "battery_mv": 8259,
+    "positions": [
+      495,
+      585,
+      212,
+      500,
+      585,
+      209,
+      499,
+      586,
+      207,
+      499,
+      413,
+      789,
+      501,
+      415,
+      789,
+      499,
+      412,
+      788
+    ],
+    "motion_commands_sent": false,
+    "new_v2_pose_executed": false
+  }
+}

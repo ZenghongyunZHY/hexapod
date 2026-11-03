@@ -1,0 +1,11 @@
+{
+  "units": "mm",
+  "source": "vendor STEP assembly",
+  "servo_axis_to_far_edge_L1": 30.5,
+  "first_leg_L2": 41.999999999999986,
+  "servo_body_end_gap": 13.199999799999937,
+  "second_leg_axis_distance": 74.20004930500879,
+  "second_leg_longitudinal_distance": 74.19999999999999,
+  "third_leg_to_metal_end_longitudinal": 112.52971669104544,
+  "use_for_actual_robot": "Requires physical geometry matching; photo bracket hole pattern differs from STEP"
+}

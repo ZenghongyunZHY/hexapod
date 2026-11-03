@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hexapod_demo</name>
+  <version>0.1.0</version>
+  <description>Fixed-frame standing and exactly six tripod gait cycles for the Lm2 robot.</description>
+  <maintainer email="hexapod@example.invalid">hexapod</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>ament_index_cpp</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

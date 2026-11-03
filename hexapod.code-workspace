@@ -1,0 +1,10 @@
+{
+  "folders": [
+    {
+      "path": "hexapod_ws"
+    }
+  ],
+  "settings": {
+    "window.title": "hexapod · Windows 编辑 / Raspberry Pi 构建 · ${activeEditorShort}"
+  }
+}

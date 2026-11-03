@@ -1,0 +1,645 @@
+{
+  "schema_version": 2,
+  "updated_on": "2026-10-21",
+  "status": "用户确认零位与单轴限幅；CAD 推导的 V1 理想运动学参数；尚未实机验证运动学步态",
+  "servo": {
+    "model": "Hiwonder LX-225",
+    "count": 18,
+    "user_reports_tested_ok": true,
+    "position_range": [
+      0,
+      1000
+    ],
+    "angle_range_deg": [
+      0,
+      240
+    ],
+    "degrees_per_position_unit": 0.24,
+    "mid_position": 500,
+    "increasing_position_rotation": "counterclockwise viewed from the metal geared output shaft end toward the housing",
+    "viewing_end": "From the metal geared output shaft end toward the servo housing",
+    "mid_position_pose_verified": true,
+    "mid_position_pose": "all 18 positions at 500 match the user numbering image unfolded pose",
+    "datasheet_dimensions_mm": [
+      40,
+      20.14,
+      51.1
+    ],
+    "supply_voltage_v": [
+      6,
+      8.4
+    ],
+    "reference_position": 500,
+    "reference_position_meaning": "用户于 2026-10-18 确认：500 为水平伸直展开零位，18 个关节角均为 0；不是站立姿态",
+    "user_configured_position_limits": [
+      140,
+      860
+    ],
+    "user_configured_position_limits_source": "用户于 2026-10-18 确认：已将 140～860 写入全部舵机，调试阶段确认各轴可达；不改变协议原生 0～1000"
+  },
+  "joint_order": [
+    "body_yaw",
+    "upper_leg_pitch",
+    "lower_leg_pitch"
+  ],
+  "legs": [
+    {
+      "key": "right_image_top",
+      "side": "right",
+      "image_row": "top",
+      "body_role": "right_front",
+      "servo_ids": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "key": "right_image_middle",
+      "side": "right",
+      "image_row": "middle",
+      "body_role": "right_middle",
+      "servo_ids": [
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "key": "right_image_bottom",
+      "side": "right",
+      "image_row": "bottom",
+      "body_role": "right_rear",
+      "servo_ids": [
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "key": "left_image_top",
+      "side": "left",
+      "image_row": "top",
+      "body_role": "left_front",
+      "servo_ids": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "key": "left_image_middle",
+      "side": "left",
+      "image_row": "middle",
+      "body_role": "left_middle",
+      "servo_ids": [
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "key": "left_image_bottom",
+      "side": "left",
+      "image_row": "bottom",
+      "body_role": "left_rear",
+      "servo_ids": [
+        16,
+        17,
+        18
+      ]
+    }
+  ],
+  "mounting": {
+    "left_right_relationship": "mirrored, confirmed by user",
+    "right_leg_orientation_reference": "user right-leg hand sketch",
+    "front_direction_in_numbering_image": "up",
+    "joint_angle_signs": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1,
+      "5": 1,
+      "6": 1,
+      "7": 1,
+      "8": 1,
+      "9": 1,
+      "10": 1,
+      "11": -1,
+      "12": -1,
+      "13": 1,
+      "14": -1,
+      "15": -1,
+      "16": 1,
+      "17": -1,
+      "18": -1
+    },
+    "joint_reference_angles_deg": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 0.0,
+      "11": 0.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 0.0
+    },
+    "installed_joint_limits": {
+      "1": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "2": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "3": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "4": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "5": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "6": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "7": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "8": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "9": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "10": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "11": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "12": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "13": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "14": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "15": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "16": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "17": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      },
+      "18": {
+        "min_deg": -86.4,
+        "max_deg": 86.4
+      }
+    },
+    "note": "本版本采用用户授权的 CAD 理想模型。方向表由输出端安装方向和明确的数学轴推导；保留 18 舵机 ID；配置完整不等于运动学步态已实机验证。",
+    "body_coordinates": {
+      "x": "forward",
+      "y": "left",
+      "z": "up"
+    },
+    "body_origin": "底层板的几何中心，位于板厚中面；X 向前、Y 向左、Z 向上",
+    "leg_root_positions_mm": {
+      "right_front": [
+        102.17,
+        -63.0,
+        21.0
+      ],
+      "right_middle": [
+        -0.04,
+        -79.0,
+        21.0
+      ],
+      "right_rear": [
+        -102.23,
+        -62.94,
+        21.0
+      ],
+      "left_front": [
+        102.23,
+        62.94,
+        21.0
+      ],
+      "left_middle": [
+        0.04,
+        79.0,
+        21.0
+      ],
+      "left_rear": [
+        -102.17,
+        63.0,
+        21.0
+      ]
+    },
+    "leg_root_axis_directions": {
+      "right_front": [
+        0,
+        0,
+        1
+      ],
+      "right_middle": [
+        0,
+        0,
+        1
+      ],
+      "right_rear": [
+        0,
+        0,
+        1
+      ],
+      "left_front": [
+        0,
+        0,
+        1
+      ],
+      "left_middle": [
+        0,
+        0,
+        1
+      ],
+      "left_rear": [
+        0,
+        0,
+        1
+      ]
+    },
+    "fixed_body_to_first_axis_transforms": {
+      "right_front": {
+        "translation_mm": [
+          102.17,
+          -63.0,
+          21.0
+        ],
+        "rotation": [
+          [
+            0.7071067811865476,
+            -0.7071067811865476,
+            0
+          ],
+          [
+            0.7071067811865476,
+            0.7071067811865476,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "right_middle": {
+        "translation_mm": [
+          -0.04,
+          -79.0,
+          21.0
+        ],
+        "rotation": [
+          [
+            1.0,
+            -0.0,
+            0
+          ],
+          [
+            0.0,
+            1.0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "right_rear": {
+        "translation_mm": [
+          -102.23,
+          -62.94,
+          21.0
+        ],
+        "rotation": [
+          [
+            0.7071067811865476,
+            0.7071067811865476,
+            0
+          ],
+          [
+            -0.7071067811865476,
+            0.7071067811865476,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "left_front": {
+        "translation_mm": [
+          102.23,
+          62.94,
+          21.0
+        ],
+        "rotation": [
+          [
+            -0.7071067811865475,
+            -0.7071067811865476,
+            0
+          ],
+          [
+            0.7071067811865476,
+            -0.7071067811865475,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "left_middle": {
+        "translation_mm": [
+          0.04,
+          79.0,
+          21.0
+        ],
+        "rotation": [
+          [
+            -1.0,
+            -0.0,
+            0
+          ],
+          [
+            0.0,
+            -1.0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "left_rear": {
+        "translation_mm": [
+          -102.17,
+          63.0,
+          21.0
+        ],
+        "rotation": [
+          [
+            -0.7071067811865475,
+            0.7071067811865476,
+            0
+          ],
+          [
+            -0.7071067811865476,
+            -0.7071067811865475,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      }
+    },
+    "body_coordinate_convention_status": "用户于 2026-10-18 确认原点与局部坐标约定；底层板中心按板厚中面落实",
+    "pitch_position_increase_effect": {
+      "right": "both upper-leg and lower-leg rotate upward from the 500 unfolded pose",
+      "left": "both upper-leg and lower-leg rotate downward from the 500 unfolded pose",
+      "source": "user correction 2026-10-14; supersedes earlier ID6 downward answer",
+      "scope_servo_ids": {
+        "right": [
+          2,
+          3,
+          5,
+          6,
+          8,
+          9
+        ],
+        "left": [
+          11,
+          12,
+          14,
+          15,
+          17,
+          18
+        ]
+      }
+    },
+    "kinematic_convention": {
+      "zero_leg_direction": [
+        0,
+        -1,
+        0
+      ],
+      "positive_joint_axes_at_zero": [
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          -1,
+          0,
+          0
+        ],
+        [
+          -1,
+          0,
+          0
+        ]
+      ],
+      "zero_pose_description": "三段理想中心线在水平面内同向伸直，沿腿根局部 -Y；参考位置 500 对应三个关节角均为 0",
+      "positive_rotation_description": "偏航绕 +Z 按右手定则；大腿向上抬为正；膝关节小腿相对大腿向上转为正，绝对俯仰为 q2+q3",
+      "lower_leg_frame_description": "lower_leg：原点在第三转轴中心，随小腿转动；q1=q2=q3=0 时三轴与该腿腿根局部坐标系同向",
+      "source": "用户于 2026-10-18 选择零位与局部坐标基准，并授权助手选择正方向；CAD 理想模型"
+    },
+    "parameter_sources": {
+      "leg_roots_and_transforms": "CAD 装配变换及输出轴中心推导；坐标按已说明结果保留到 0.01 mm，安装角取 45/0/-45/135/180/-135 度；非实测",
+      "joint_angle_signs": "CAD 主输出端方向结合用户已确认的位置增大转向，按本次数学正轴逐轴推导；偏航全部 +1，右俯仰 +1、左俯仰 -1",
+      "joint_reference_angles_deg": "用户于 2026-10-18 确认位置 500 对应关节角 0；2026-10-19 将表名统一为 joint_reference_angles_deg，含义和数值不变",
+      "installed_joint_limits": "用户确认的 140～860，通过 (p-500)×0.24° 换算为每轴 [-86.4°,86.4°]"
+    }
+  },
+  "model_geometry": {
+    "units": "mm",
+    "source": "商家 STEP 装配体；用户于 2026-10-18 授权作为 V1 理想几何",
+    "first_leg_length": 42.0,
+    "second_leg_length": 74.2,
+    "third_leg_length_to_metal_end": 112.53,
+    "actual_foot_contact_point": {
+      "frame": "lower_leg",
+      "position_mm": [
+        0,
+        -112.53,
+        0
+      ],
+      "source": "用户于 2026-10-20 选择金属脚端作为理想触点，2026-10-21 明确确认实物未安装胶垫；采用 CAD 金属端 L3=112.53 mm，统一六腿",
+      "measurement_status": "用户选择的 CAD 理想金属端点足；不是实测触点"
+    },
+    "notes": [
+      "第三段金属长度 L3=112.53 mm，独立保留；当前理想触点取金属脚端，计算时使用 lower_leg 中的触点向量，不能再叠加一次 L3。",
+      "忽略 CAD 中约 0.5 mm 的轴心横向/高度偏置和约 0.08554 mm 的细小偏差；理想零位三段水平伸直。",
+      "2026-10-20 起不计胶垫，采用金属端理想触点；此前 CAD 胶垫端参考坐标 (0.506318544,-121.405393716,0) mm 仅保留作历史参考。"
+    ],
+    "servo_axis_to_far_end_L1": 30.5,
+    "servo_far_end_gap_d": 13.2,
+    "baseplate_dimensions_mm": [
+      201.33,
+      136,
+      2
+    ],
+    "measurement_status": "CAD 推导和理想化约定；不标记为实物测量",
+    "first_leg_length_definition": "L2: horizontal distance between first and second servo axes",
+    "second_leg_length_definition": "Distance between second and third servo axes; longitudinal formula 2*L1+d",
+    "third_leg_length_definition": "L3: from third servo axis to assembled metal foot end along the leg; excludes rubber pad",
+    "mounting_reference": "Baseplate three-hole line marked by user is the end reference of the fixed servo connection"
+  },
+  "references": {
+    "numbering_image": "references/hardware/servo-numbering.png",
+    "right_leg_orientation_image": "references/hardware/right-leg-mounting.jpg",
+    "full_assembly_step": "references/cad/Lm2-assembly.step",
+    "baseplate_step": "references/cad/Lm2-baseplate.step",
+    "assembly_dxf": "references/cad/Lm2-assembly.dxf",
+    "servo_datasheet": "references/datasheets/LX-225-datasheet.pdf",
+    "assembled_leg_image": "references/hardware/assembled-leg.jpg",
+    "servo_L1_definition": "references/hardware/servo-L1-definition.jpg",
+    "coxa_L2_definition": "references/hardware/coxa-L2-definition.jpg",
+    "femur_gap_definition": "references/hardware/femur-connector-span.jpg",
+    "tibia_L3_definition": "references/hardware/tibia-L3-definition.jpg",
+    "base_mount_reference": "references/hardware/base-mount-reference.jpg",
+    "measurement_data": "outputs/Lm2_leg_lengths.json",
+    "reference_manifest": "references/manifest.json",
+    "desired_standing_pose": "references/hardware/desired-standing-pose.jpg"
+  },
+  "baseline_document": "docs/physical-baseline.md",
+  "units": {
+    "length": "mm",
+    "angle": "degree"
+  },
+  "confirmed_by_user": [
+    "servo ID mapping and testing normal",
+    "front direction is up in numbering image",
+    "all positions 500 match unfolded reference image",
+    "left and right servo mounting mirrored",
+    "increasing position rotates counterclockwise viewed from metal geared end toward housing",
+    "three-hole span corresponds to the two servo far-end installation gap",
+    "three leg length definitions and metal endpoint for L3",
+    "Right-side pitch servos: increasing position moves both leg segments upward; left-side pitch servos: increasing moves both downward (corrected).",
+    "2026-10-18：机身原点取底层中心，右中腿局部三轴与机身同向，其他腿采用相应旋转",
+    "2026-10-18：水平伸直为零位，全部位置 500 对应关节角 0",
+    "2026-10-18：全部舵机已写入 140～860 限幅且调试可达",
+    "2026-10-18：授权按 CAD 与数学约定确定安装、符号、腿长和理想触地点",
+    "2026-10-21：实物未安装胶垫；当前理想触点取金属端，向量模长等于 CAD 金属端 L3=112.53 mm；不作为实测尺寸"
+  ],
+  "demo_candidate": {
+    "status": "v2 fixed-frame candidate; user reports prior stance too low; revised parameters not physically verified",
+    "stance_reference": "references/hardware/desired-standing-pose.jpg",
+    "right_leg_positions": [
+      500,
+      550,
+      200
+    ],
+    "left_leg_positions": [
+      500,
+      450,
+      800
+    ],
+    "note": "v2 chosen femur +12 degrees, knee relative -72 degrees, tibia slope -60 degrees; fixed authored positions, not measured angles.",
+    "walk_full_cycles": 6,
+    "frame_table": "ros2_ws/src/hexapod_demo/config/poses.csv",
+    "voltage_allowance": {
+      "minimum_mv": 6000,
+      "maximum_mv": 8700,
+      "inclusive": true,
+      "scope": "current stand_demo and walk_demo only",
+      "status": "temporary software allowance, explicit user request 2026-10-14",
+      "datasheet_maximum_mv": 8400,
+      "adc_calibration_verified": false
+    },
+    "revision": "v2-higher-larger-faster-2026-10-14",
+    "hip_sweep_position_magnitude": 35,
+    "lift_candidate": {
+      "femur_position_delta_magnitude": 35,
+      "knee_position_delta_magnitude": 15
+    },
+    "phase_timing_ms": {
+      "lift": 300,
+      "swing_or_recenter": 400,
+      "land": 300,
+      "settle": 100,
+      "standing_transition": 3000,
+      "standing_settle": 600
+    },
+    "cad_planar_height_estimate_mm": {
+      "from_upper_pitch_axis_to_metal_endpoint": 82.03,
+      "prior_candidate": 61.12,
+      "increase": 20.9,
+      "excludes": "root mounting height, rubber contact and actual dimensional calibration"
+    },
+    "prior_candidate": {
+      "right": [
+        500,
+        583,
+        208
+      ],
+      "left": [
+        500,
+        417,
+        792
+      ],
+      "user_observation": "stance too low; asks for higher body, larger steps and faster motion",
+      "physical_walk_verified": false
+    },
+    "communication_validation": {
+      "date": "2026-10-14",
+      "real_read_only_probe": "8259mV and all 18 servo positions received",
+      "diagnostic": "intermittent missing ID7 in a 17-servo reply; subsequent queries complete",
+      "recovery": "up to two targeted missing-ID reads inside original deadline; still require all 18",
+      "physical_v2_motion_verified": false
+    }
+  }
+}

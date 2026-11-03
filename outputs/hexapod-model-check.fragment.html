@@ -1,0 +1,198 @@
+<div id="hexapod-model-check">
+  <style>
+    #hexapod-model-check { color:var(--foreground); }
+    #hexapod-model-check [hidden] { display:none !important; }
+    #hexapod-model-check .diagram { width:100%; display:block; overflow:visible; }
+    #hexapod-model-check .detail { min-height:2em; margin-block:8px; }
+    #hexapod-model-check .legend { display:flex; flex-wrap:wrap; gap:8px 20px; margin-block:8px; }
+    #hexapod-model-check .legend span { display:inline-flex; align-items:center; gap:6px; }
+    #hexapod-model-check .swatch { display:inline-block; width:20px; height:3px; }
+    #hexapod-model-check text { fill:var(--foreground); font-family:inherit; }
+    #hexapod-model-check .secondary { fill:var(--muted-foreground); }
+    #hexapod-model-check .outline { stroke:var(--foreground); fill:none; stroke-width:1.4; }
+    #hexapod-model-check .quiet { stroke:var(--border); fill:none; stroke-width:1; }
+    #hexapod-model-check .joint { fill:var(--background); stroke:var(--foreground); stroke-width:1.5; }
+    #hexapod-model-check .segment { fill:none; stroke-linecap:round; stroke-width:5; }
+    #hexapod-model-check .dimension { fill:none; stroke:var(--muted-foreground); stroke-width:1; }
+  </style>
+  <h3>六足机器人 · 信息核对模型</h3>
+  <div class="viz-controls">
+    <label class="form-label">视图
+      <select class="form-select" data-view aria-label="模型视图">
+        <option value="top">整机俯视：舵机编号</option>
+        <option value="leg">单腿侧视：三段长度</option>
+        <option value="shaft">金属齿轮端：旋转方向</option>
+      </select>
+    </label>
+    <label class="form-label" data-leg-field>核对哪条腿
+      <select class="form-select" data-leg aria-label="选择一条腿">
+        <option value="rf">右前 · 1 / 2 / 3</option>
+        <option value="rm">右中 · 4 / 5 / 6</option>
+        <option value="rr">右后 · 7 / 8 / 9</option>
+        <option value="lf">左前 · 10 / 11 / 12</option>
+        <option value="lm">左中 · 13 / 14 / 15</option>
+        <option value="lr">左后 · 16 / 17 / 18</option>
+      </select>
+    </label>
+  </div>
+  <div class="detail text-small" aria-live="polite" data-detail></div>
+  <svg class="diagram" role="img" aria-label="机器人编号与几何关系示意图"></svg>
+  <div class="legend text-small" data-legend>
+    <span><i class="swatch" style="background:var(--viz-series-1)"></i>第一段 · L2</span>
+    <span><i class="swatch" style="background:var(--viz-series-2)"></i>第二段 · 2×L1＋间隙</span>
+    <span><i class="swatch" style="background:var(--viz-series-3)"></i>第三段 · L3</span>
+  </div>
+  <div data-shaft-controls hidden>
+    <label class="form-label" for="hexapod-native-position">位置值 <output class="tabular-nums" data-position-label>500</output></label>
+    <input class="form-range" id="hexapod-native-position" type="range" min="400" max="600" value="500" step="1" aria-label="金属齿轮端位置值演示">
+  </div>
+  <div class="text-small text-muted" data-footer></div>
+  <script>
+  (() => {
+    const root=document.getElementById('hexapod-model-check');
+    const svg=root.querySelector('.diagram');
+    const viewControl=root.querySelector('[data-view]');
+    const legControl=root.querySelector('[data-leg]');
+    const slider=root.querySelector('#hexapod-native-position');
+    const detail=root.querySelector('[data-detail]');
+    const footer=root.querySelector('[data-footer]');
+    const ns='http://www.w3.org/2000/svg';
+    const legs=[
+      {key:'rf',name:'右前',ids:[1,2,3],anchor:[62,82],direction:[Math.SQRT1_2,Math.SQRT1_2]},
+      {key:'rm',name:'右中',ids:[4,5,6],anchor:[68,0],direction:[1,0]},
+      {key:'rr',name:'右后',ids:[7,8,9],anchor:[62,-82],direction:[Math.SQRT1_2,-Math.SQRT1_2]},
+      {key:'lf',name:'左前',ids:[10,11,12],anchor:[-62,82],direction:[-Math.SQRT1_2,Math.SQRT1_2]},
+      {key:'lm',name:'左中',ids:[13,14,15],anchor:[-68,0],direction:[-1,0]},
+      {key:'lr',name:'左后',ids:[16,17,18],anchor:[-62,-82],direction:[-Math.SQRT1_2,-Math.SQRT1_2]}
+    ];
+    const lengths=[42,74.2,112.53];
+    let state={view:'top',leg:'rf',position:500};
+    function apply(saved){
+      if(!saved)return;
+      const s=saved.privateContent||saved;
+      if(['top','leg','shaft'].includes(s.view))state.view=s.view;
+      if(legs.some(l=>l.key===s.leg))state.leg=s.leg;
+      if(Number.isFinite(s.position))state.position=Math.max(400,Math.min(600,s.position));
+      viewControl.value=state.view;legControl.value=state.leg;slider.value=state.position;
+    }
+    apply(window.openai?.widgetState);
+    function save(){
+      const selected=legs.find(l=>l.key===state.leg);
+      window.openai?.setWidgetState?.({modelContent:{selected_leg:selected.name,servo_ids:selected.ids,view:state.view,native_position_demo:state.position},privateContent:state})?.catch(()=>{});
+    }
+    function el(tag,attrs={},parent=svg){
+      const node=document.createElementNS(ns,tag);
+      for(const [k,v] of Object.entries(attrs))node.setAttribute(k,v);
+      parent.appendChild(node);return node;
+    }
+    function text(x,y,value,attrs={}){const t=el('text',{x,y,'text-anchor':'middle',class:'text-small',...attrs});t.textContent=value;return t;}
+    function line(a,b,attrs={}){return el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],...attrs});}
+    function arrow(a,b,attrs={}){line(a,b,{'stroke':'var(--foreground)','stroke-width':1.3,'marker-end':'url(#hexapod-arrow)',...attrs});}
+    function dot(p,r=5,attrs={}){return el('circle',{cx:p[0],cy:p[1],r,class:'joint',...attrs});}
+    function dimensions(x1,x2,y,label){
+      line([x1,y-8],[x1,y+8],{class:'dimension'});line([x2,y-8],[x2,y+8],{class:'dimension'});
+      line([x1,y],[x2,y],{class:'dimension'});text((x1+x2)/2,y-10,label);
+    }
+    function render(){
+      const w=Math.max(280,root.getBoundingClientRect().width);
+      const compact=w<520;
+      const selected=legs.find(l=>l.key===state.leg);
+      svg.replaceChildren();
+      const defs=el('defs');const marker=el('marker',{id:'hexapod-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse'},defs);
+      el('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'var(--foreground)'},marker);
+      root.querySelector('[data-shaft-controls]').hidden=state.view!=='shaft';
+      root.querySelector('[data-leg-field]').hidden=state.view==='shaft';
+      root.querySelector('[data-legend]').hidden=state.view==='shaft';
+      const title=el('title');title.textContent='六足机器人核对模型';
+      if(state.view==='top'){
+        const h=compact?440:560;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+        const scale=Math.min((w-72)/620,(h-134)/500);const cx=w/2,cy=h/2+8;
+        const xy=(p)=>[cx+p[0]*scale,cy-p[1]*scale];
+        detail.textContent='全部位置值 500 · 机头向上 · 左右安装镜像';
+        const plate=[[-42,105],[42,105],[68,76],[68,-76],[42,-105],[-42,-105],[-68,-76],[-68,76]];
+        el('polygon',{points:plate.map(p=>xy(p).join(',')).join(' '),fill:'var(--muted)',stroke:'var(--border)','stroke-width':1.3});
+        const o=xy([0,0]);dot(o,3);text(o[0],o[1]+24,'机身中心');
+        arrow([cx,54],[cx,20]);text(cx+10,25,'+X 前',{'text-anchor':'start'});
+        arrow([cx-8,h-30],[cx-57,h-30]);text(cx-67,h-26,'+Y 左',{'text-anchor':'end'});
+        text(cx+16,h-26,'⊙ +Z 向上',{'text-anchor':'start'});
+        legs.forEach(leg=>{
+          let p=[...leg.anchor];const points=[xy(p)];
+          for(const len of lengths){p=[p[0]+leg.direction[0]*len,p[1]+leg.direction[1]*len];points.push(xy(p));}
+          const isSelected=leg.key===state.leg;
+          if(isSelected)el('polyline',{points:points.map(p=>p.join(',')).join(' '),fill:'none',stroke:'var(--foreground)','stroke-width':9,opacity:.13,'stroke-linecap':'round'});
+          for(let i=0;i<3;i++)line(points[i],points[i+1],{class:'segment',stroke:`var(--viz-series-${i+1})`,'stroke-width':isSelected?5:3.5,opacity:isSelected?1:.65});
+          points.slice(0,3).forEach((point,i)=>{
+            dot(point,compact?3.5:5);
+            if(!compact){
+              const [dx,dy]=leg.direction;const offset=i%2===0?-15:15;
+              text(point[0]+dy*offset,point[1]+dx*offset+4,String(leg.ids[i]));
+            }
+          });
+          const foot=points[3];el('rect',{x:foot[0]-3,y:foot[1]-3,width:6,height:6,fill:'var(--foreground)'});
+          const tailY=foot[1]+(leg.anchor[1]>0?-18:22);
+          text(foot[0],tailY,compact?`${leg.name} ${leg.ids.join('·')}`:leg.name,{'font-weight':isSelected?500:400});
+        });
+        footer.textContent=compact?'数字顺序：靠机身轴 → 中间轴 → 脚端轴。根部安装位置为示意。':'圆点为舵机轴，方点为金属脚端；根部安装坐标为示意，尚未用 CAD 精确定位。';
+      }else if(state.view==='leg'){
+        const h=compact?460:390;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+        const x0=compact?50:95;const scale=(w-x0-28)/230;const y=compact?150:145;
+        const cumulative=[0,42,116.2,228.73];const ps=cumulative.map(r=>[x0+r*scale,y]);
+        detail.textContent=`${selected.name}腿 · ID ${selected.ids.join(' → ')} · 全部 500 的展开基准`;
+        el('rect',{x:12,y:y-27,width:Math.max(20,x0-34),height:54,fill:'var(--muted)',stroke:'var(--border)'});
+        text(12+(x0-34)/2,y-36,'机身');
+        line([Math.max(32,x0-22),y],ps[0],{class:'dimension','stroke-dasharray':'4 3'});
+        arrow([ps[0][0],y+22],[ps[0][0],y-58]);
+        text(ps[0][0],y-73,`ID ${selected.ids[0]}`);
+        text(ps[0][0],y+46,'偏航轴');
+        for(let i=0;i<3;i++)line(ps[i],ps[i+1],{class:'segment',stroke:`var(--viz-series-${i+1})`});
+        for(let i=1;i<3;i++){
+          dot(ps[i],7);dot(ps[i],1.5,{fill:'var(--foreground)'});
+          text(ps[i][0],y-25,`ID ${selected.ids[i]}`);text(ps[i][0],y+(compact&&i===1?68:46),'俯仰轴');
+        }
+        el('rect',{x:ps[3][0]-4,y:y-4,width:8,height:8,fill:'var(--foreground)'});
+        text(ps[3][0]-3,y-25,'金属脚端',{'text-anchor':'end'});
+        if(compact){
+          dimensions(ps[0][0],ps[1][0],y+92,'L2');
+          dimensions(ps[1][0],ps[2][0],y+92,'第二段');
+          dimensions(ps[2][0],ps[3][0],y+92,'L3');
+          text(w/2,y+145,'第一段 L2：42.00 mm');text(w/2,y+175,'第二段：74.20 mm');text(w/2,y+205,'第三段 L3：112.53 mm');
+        }else{
+          dimensions(ps[0][0],ps[1][0],y+98,'42.00 mm');
+          dimensions(ps[1][0],ps[2][0],y+98,'74.20 mm');
+          dimensions(ps[2][0],ps[3][0],y+98,'112.53 mm');
+          text((ps[0][0]+ps[1][0])/2,y+123,'第一段 L2');
+          text((ps[1][0]+ps[2][0])/2,y+123,'第二段');
+          text((ps[2][0]+ps[3][0])/2,y+123,'第三段 L3');
+        }
+        text(w/2,h-37,compact?'L1：30.50 mm（舵机内部偏置）':'L1 = 30.50 mm · 舵机轴心到远端的内部偏置');
+        text(w/2,h-14,compact?'机身到第一轴：固定安装偏移待提取':'机身到第一轴：固定安装偏移，尚待提取');
+        footer.textContent='长度暂用 CAD 值；第二段含 13.20 mm 装配间隙，L3 不含胶垫。高度差与俯仰轴端朝向未在此侧视图表达。';
+      }else{
+        const h=390;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+        const cx=w/2,cy=195,r=Math.min(84,(w-100)/2);
+        detail.textContent='观察视角：从金属齿轮端，沿轴看向舵机壳体';
+        el('rect',{x:cx-r-25,y:cy-r-25,width:2*r+50,height:2*r+50,fill:'var(--muted)',stroke:'var(--border)','stroke-width':1});
+        dot([cx,cy],r,{fill:'var(--background)'});
+        for(let k=0;k<24;k++){
+          const a=k*Math.PI/12;line([cx+(r-8)*Math.cos(a),cy+(r-8)*Math.sin(a)],[cx+(r+1)*Math.cos(a),cy+(r+1)*Math.sin(a)],{stroke:'var(--muted-foreground)','stroke-width':2});
+        }
+        const angle=(state.position-500)*0.24*Math.PI/180;
+        const tip=[cx-r*.76*Math.sin(angle),cy-r*.76*Math.cos(angle)];
+        line([cx,cy],tip,{stroke:'var(--viz-series-1)','stroke-width':5,'stroke-linecap':'round'});dot([cx,cy],5);
+        const rr=r+43;el('path',{d:`M ${cx+rr*.75} ${cy-rr*.66} A ${rr} ${rr} 0 0 0 ${cx-rr*.75} ${cy-rr*.66}`,stroke:'var(--foreground)',fill:'none','stroke-width':1.8,'marker-end':'url(#hexapod-arrow)'});
+        text(cx,33,'位置值增大 → 逆时针');
+        text(cx,cy+r+55,`${state.position} · 相对 500 为 ${((state.position-500)*.24).toFixed(2)}°`);
+        root.querySelector('[data-position-label]').textContent=state.position;
+        footer.textContent='只演示你确认的动力轴转向；尚未据此填写各俯仰关节在机身坐标系中的正负号。';
+      }
+    }
+    viewControl.addEventListener('change',()=>{state.view=viewControl.value;render();save();});
+    legControl.addEventListener('change',()=>{state.leg=legControl.value;render();save();});
+    slider.addEventListener('input',()=>{state.position=Number(slider.value);render();});
+    slider.addEventListener('change',save);
+    window.addEventListener('openai:set_globals',event=>{const s=event.detail?.globals?.widgetState;if(s){apply(s);render();}});
+    new ResizeObserver(render).observe(root);
+    render();
+  })();
+  </script>
+</div>

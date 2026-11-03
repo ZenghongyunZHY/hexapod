@@ -1,0 +1,29 @@
+__pycache__/
+*.pyc
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+hexapod_ws/build/
+hexapod_ws/install/
+hexapod_ws/log/
+
+# Machine-specific editor and Raspberry Pi synchronization state.
+/.pi_sync_baseline.json
+**/.vscode/
+
+# Local credentials and editor/OS caches.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Third-party source documents remain local until redistribution is confirmed.
+/references/cad/
+/references/datasheets/
+/outputs/LX225_spec-*.png

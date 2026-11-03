@@ -1,0 +1,79 @@
+{
+  "saved_on": "2026-10-14",
+  "files": [
+    {
+      "path": "references/cad/Lm2-assembly.step",
+      "original_path": "C:\\baidunetdiskdownload\\021 Lm2六足机器人图纸\\021 Lm2六足机器人图纸\\三维STEP通用格式\\Lm2六足机器人完整体.STEP",
+      "bytes": 11951216,
+      "sha256": "9aefb7d278faa12f99113ed0fc54d894f6da274f2ca5410dd2ab1af78517199f"
+    },
+    {
+      "path": "references/cad/Lm2-baseplate.step",
+      "original_path": "C:\\baidunetdiskdownload\\021 Lm2六足机器人图纸\\021 Lm2六足机器人图纸\\三维SolidWorks格式\\Lm2六足支架\\Lm2六足底板.STEP",
+      "bytes": 755455,
+      "sha256": "1583427c17336a35fe5e0dc5a6867e4edef0bcbf4b66657b560bdcbfff0f627c"
+    },
+    {
+      "path": "references/cad/Lm2-assembly.dxf",
+      "original_path": "C:\\baidunetdiskdownload\\021 Lm2六足机器人图纸\\021 Lm2六足机器人图纸\\二维CAD图纸\\Lm2六足机器人完整体图纸.DXF",
+      "bytes": 6906446,
+      "sha256": "4110f35ddc794e93428056de934fb2acaeeeb6501765fd97924456ab71826ac1"
+    },
+    {
+      "path": "references/datasheets/LX-225-datasheet.pdf",
+      "original_path": "C:\\Users\\zengh\\Documents\\Codex\\2026-10-14\\new-chat\\outputs\\产品手册\\中文下载资料\\LX-225总线舵机规格书.pdf",
+      "bytes": 212012,
+      "sha256": "3ca11454549ee6943660e16dfab85ef26427e3067b6c5b4fa6ac71b8d49b0da7"
+    },
+    {
+      "path": "references/hardware/assembled-leg.jpg",
+      "bytes": 2515783,
+      "sha256": "901f30a7e1795fe2a3425ca1fcfe6fc2504feb234d1756b0e7d6d1de15671a3a"
+    },
+    {
+      "path": "references/hardware/base-mount-reference.jpg",
+      "bytes": 43075,
+      "sha256": "cf59c68b1bff208830222d4adfe572a4e714a424af130a4e6ab6c1fb0de31ba3"
+    },
+    {
+      "path": "references/hardware/coxa-L2-definition.jpg",
+      "bytes": 1478678,
+      "sha256": "14977c0d326463bcbb89425796a657ffe3f9d57ed667c609c03193a75f295b02"
+    },
+    {
+      "path": "references/hardware/femur-connector-span.jpg",
+      "bytes": 274221,
+      "sha256": "fa440d373f8cb0fd9354cd860948c3e4ea48a33e26e4fdfa88badf51c2444eae"
+    },
+    {
+      "path": "references/hardware/right-leg-mounting.jpg",
+      "bytes": 58778,
+      "sha256": "2d8c8a1d78229fd6fb0625226d5f7372cfadc421f11a680be2f8d6fd046192dc"
+    },
+    {
+      "path": "references/hardware/servo-L1-definition.jpg",
+      "bytes": 7756,
+      "sha256": "e0c0bdd87feae7704eddba1bfc88c0877194e3c65220bfa4f6f6ec75ff0638a6"
+    },
+    {
+      "path": "references/hardware/servo-numbering.png",
+      "bytes": 526981,
+      "sha256": "9226e9c7eb5f89ee9bc0b8fc3c9f59af0219cc6ec60f7a957c9197951d12c25e"
+    },
+    {
+      "path": "references/hardware/tibia-L3-definition.jpg",
+      "bytes": 128852,
+      "sha256": "d78f37e15c14dee17f53b0ec99c757af1655d9393394602babd19861b6de536d"
+    },
+    {
+      "path": "references/hardware/desired-standing-pose.jpg",
+      "bytes": 42388,
+      "sha256": "bd859bf1ab59515119b494c423ebeda1a9da7a4c7fbf195d55ff535afdb87040"
+    },
+    {
+      "path": "references/datasheets/BusServoController-UART-protocol.pdf",
+      "bytes": 372138,
+      "sha256": "609114be055488cfd49c5c522f51354b58ecc7aff32b3a2dff8cd966a6a1ef32"
+    }
+  ]
+}

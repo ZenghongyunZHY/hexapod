@@ -1,0 +1,273 @@
+{
+  "schema_version": 2,
+  "updated_on": "2026-10-14",
+  "status": "physical baseline with per-field confirmation; incomplete kinematics calibration",
+  "servo": {
+    "model": "Hiwonder LX-225",
+    "count": 18,
+    "user_reports_tested_ok": true,
+    "position_range": [
+      0,
+      1000
+    ],
+    "angle_range_deg": [
+      0,
+      240
+    ],
+    "degrees_per_position_unit": 0.24,
+    "mid_position": 500,
+    "increasing_position_rotation": "counterclockwise viewed from the metal geared output shaft end toward the housing",
+    "viewing_end": "From the metal geared output shaft end toward the servo housing",
+    "mid_position_pose_verified": true,
+    "mid_position_pose": "all 18 positions at 500 match the user numbering image unfolded pose",
+    "datasheet_dimensions_mm": [
+      40,
+      20.14,
+      51.1
+    ],
+    "supply_voltage_v": [
+      6,
+      8.4
+    ],
+    "reference_position": 500,
+    "reference_position_meaning": "User-confirmed unfolded reference pose, not standing pose; mathematical joint reference angles are not yet calibrated"
+  },
+  "joint_order": [
+    "body_yaw",
+    "upper_leg_pitch",
+    "lower_leg_pitch"
+  ],
+  "legs": [
+    {
+      "key": "right_image_top",
+      "side": "right",
+      "image_row": "top",
+      "body_role": "right_front",
+      "servo_ids": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "key": "right_image_middle",
+      "side": "right",
+      "image_row": "middle",
+      "body_role": "right_middle",
+      "servo_ids": [
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "key": "right_image_bottom",
+      "side": "right",
+      "image_row": "bottom",
+      "body_role": "right_rear",
+      "servo_ids": [
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "key": "left_image_top",
+      "side": "left",
+      "image_row": "top",
+      "body_role": "left_front",
+      "servo_ids": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "key": "left_image_middle",
+      "side": "left",
+      "image_row": "middle",
+      "body_role": "left_middle",
+      "servo_ids": [
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "key": "left_image_bottom",
+      "side": "left",
+      "image_row": "bottom",
+      "body_role": "left_rear",
+      "servo_ids": [
+        16,
+        17,
+        18
+      ]
+    }
+  ],
+  "mounting": {
+    "left_right_relationship": "mirrored, confirmed by user",
+    "right_leg_orientation_reference": "user right-leg hand sketch",
+    "front_direction_in_numbering_image": "up",
+    "joint_angle_signs": null,
+    "joint_zero_offsets": null,
+    "installed_joint_limits": null,
+    "note": "Do not infer all left/right angle signs from mirroring alone; express each output shaft axis in the chosen robot coordinate frame.",
+    "body_coordinates": {
+      "x": "forward",
+      "y": "left",
+      "z": "up"
+    },
+    "body_origin": null,
+    "leg_root_positions_mm": null,
+    "leg_root_axis_directions": null,
+    "fixed_body_to_first_axis_transforms": null,
+    "body_coordinate_convention_status": "development convention used by the schematic",
+    "pitch_position_increase_effect": {
+      "right": "both upper-leg and lower-leg rotate upward from the 500 unfolded pose",
+      "left": "both upper-leg and lower-leg rotate downward from the 500 unfolded pose",
+      "source": "user correction 2026-10-14; supersedes earlier ID6 downward answer",
+      "scope_servo_ids": {
+        "right": [
+          2,
+          3,
+          5,
+          6,
+          8,
+          9
+        ],
+        "left": [
+          11,
+          12,
+          14,
+          15,
+          17,
+          18
+        ]
+      }
+    }
+  },
+  "model_geometry": {
+    "units": "mm",
+    "source": "vendor STEP assembly; not yet validated against all actual parts",
+    "first_leg_length": 42.0,
+    "second_leg_length": 74.2,
+    "third_leg_length_to_metal_end": 112.53,
+    "actual_foot_contact_point": null,
+    "notes": [
+      "Third length excludes the rubber foot pad.",
+      "Photo bracket hole pattern differs from the CAD; verify the actual second leg length."
+    ],
+    "servo_axis_to_far_end_L1": 30.5,
+    "servo_far_end_gap_d": 13.2,
+    "baseplate_dimensions_mm": [
+      201.33,
+      136,
+      2
+    ],
+    "measurement_status": "CAD measurements; not all physical dimensions have been measured",
+    "first_leg_length_definition": "L2: horizontal distance between first and second servo axes",
+    "second_leg_length_definition": "Distance between second and third servo axes; longitudinal formula 2*L1+d",
+    "third_leg_length_definition": "L3: from third servo axis to assembled metal foot end along the leg; excludes rubber pad",
+    "mounting_reference": "Baseplate three-hole line marked by user is the end reference of the fixed servo connection"
+  },
+  "references": {
+    "numbering_image": "references/hardware/servo-numbering.png",
+    "right_leg_orientation_image": "references/hardware/right-leg-mounting.jpg",
+    "full_assembly_step": "references/cad/Lm2-assembly.step",
+    "baseplate_step": "references/cad/Lm2-baseplate.step",
+    "assembly_dxf": "references/cad/Lm2-assembly.dxf",
+    "servo_datasheet": "references/datasheets/LX-225-datasheet.pdf",
+    "assembled_leg_image": "references/hardware/assembled-leg.jpg",
+    "servo_L1_definition": "references/hardware/servo-L1-definition.jpg",
+    "coxa_L2_definition": "references/hardware/coxa-L2-definition.jpg",
+    "femur_gap_definition": "references/hardware/femur-connector-span.jpg",
+    "tibia_L3_definition": "references/hardware/tibia-L3-definition.jpg",
+    "base_mount_reference": "references/hardware/base-mount-reference.jpg",
+    "measurement_data": "outputs/Lm2_leg_lengths.json",
+    "reference_manifest": "references/manifest.json",
+    "desired_standing_pose": "references/hardware/desired-standing-pose.jpg"
+  },
+  "baseline_document": "docs/physical-baseline.md",
+  "units": {
+    "length": "mm",
+    "angle": "degree"
+  },
+  "confirmed_by_user": [
+    "servo ID mapping and testing normal",
+    "front direction is up in numbering image",
+    "all positions 500 match unfolded reference image",
+    "left and right servo mounting mirrored",
+    "increasing position rotates counterclockwise viewed from metal geared end toward housing",
+    "three-hole span corresponds to the two servo far-end installation gap",
+    "three leg length definitions and metal endpoint for L3",
+    "Right-side pitch servos: increasing position moves both leg segments upward; left-side pitch servos: increasing moves both downward (corrected)."
+  ],
+  "demo_candidate": {
+    "status": "v2 fixed-frame candidate; user reports prior stance too low; revised parameters not physically verified",
+    "stance_reference": "references/hardware/desired-standing-pose.jpg",
+    "right_leg_positions": [
+      500,
+      550,
+      200
+    ],
+    "left_leg_positions": [
+      500,
+      450,
+      800
+    ],
+    "note": "v2 chosen femur +12 degrees, knee relative -72 degrees, tibia slope -60 degrees; fixed authored positions, not measured angles.",
+    "walk_full_cycles": 6,
+    "frame_table": "ros2_ws/src/hexapod_demo/config/poses.csv",
+    "voltage_allowance": {
+      "minimum_mv": 6000,
+      "maximum_mv": 8700,
+      "inclusive": true,
+      "scope": "current stand_demo and walk_demo only",
+      "status": "temporary software allowance, explicit user request 2026-10-14",
+      "datasheet_maximum_mv": 8400,
+      "adc_calibration_verified": false
+    },
+    "revision": "v2-higher-larger-faster-2026-10-14",
+    "hip_sweep_position_magnitude": 35,
+    "lift_candidate": {
+      "femur_position_delta_magnitude": 35,
+      "knee_position_delta_magnitude": 15
+    },
+    "phase_timing_ms": {
+      "lift": 300,
+      "swing_or_recenter": 400,
+      "land": 300,
+      "settle": 100,
+      "standing_transition": 3000,
+      "standing_settle": 600
+    },
+    "cad_planar_height_estimate_mm": {
+      "from_upper_pitch_axis_to_metal_endpoint": 82.03,
+      "prior_candidate": 61.12,
+      "increase": 20.9,
+      "excludes": "root mounting height, rubber contact and actual dimensional calibration"
+    },
+    "prior_candidate": {
+      "right": [
+        500,
+        583,
+        208
+      ],
+      "left": [
+        500,
+        417,
+        792
+      ],
+      "user_observation": "stance too low; asks for higher body, larger steps and faster motion",
+      "physical_walk_verified": false
+    },
+    "communication_validation": {
+      "date": "2026-10-14",
+      "real_read_only_probe": "8259mV and all 18 servo positions received",
+      "diagnostic": "intermittent missing ID7 in a 17-servo reply; subsequent queries complete",
+      "recovery": "up to two targeted missing-ID reads inside original deadline; still require all 18",
+      "physical_v2_motion_verified": false
+    }
+  }
+}

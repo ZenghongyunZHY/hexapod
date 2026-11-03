@@ -1,0 +1,104 @@
+{
+  "protocol": "Hiwonder Bus Servo Controller UART, command 3; not direct servo TTL",
+  "port": "/dev/ttyS0",
+  "baud": 9600,
+  "data_bits": 8,
+  "parity": "none",
+  "stop_bits": 1,
+  "gpio": {
+    "tx": {
+      "bcm": 14,
+      "physical_pin": 8,
+      "connect_to": "controller RX"
+    },
+    "rx": {
+      "bcm": 15,
+      "physical_pin": 10,
+      "connect_to": "controller TX through 3.3V-compatible signal interface"
+    },
+    "gnd": {
+      "physical_pin": 6,
+      "connect_to": "controller GND"
+    },
+    "controller_5v_pin": "leave unconnected; power Pi separately"
+  },
+  "stand_candidate": {
+    "femur_relative_to_unfolded_deg": 12.0,
+    "tibia_relative_to_femur_deg": -72.0,
+    "tibia_absolute_slope_deg": -60.0,
+    "right": [
+      500,
+      550,
+      200
+    ],
+    "left": [
+      500,
+      450,
+      800
+    ],
+    "mechanically_verified": false,
+    "source": "User reports prior stance too low and requests higher stance; v2 fixed angles are authoring choices, pending physical verification",
+    "cad_planar_height_estimate_mm": {
+      "from_upper_pitch_axis_to_metal_endpoint": 82.03,
+      "prior_candidate": 61.12,
+      "increase": 20.9,
+      "excludes": "root mounting height, rubber contact and actual dimensional calibration"
+    }
+  },
+  "pitch_direction_source": "explicit user correction: right increasing raises both pitch joints, left increasing lowers both",
+  "yaw_forward_assumption": "right increasing advances, left decreasing advances, assuming output gears point upward as in CAD; actual advance direction not yet tested",
+  "tripod_a": [
+    "rf",
+    "lm",
+    "rr"
+  ],
+  "tripod_b": [
+    "lf",
+    "rm",
+    "lr"
+  ],
+  "walking_cycles": 6,
+  "walking_swing_landings": 12,
+  "recovery": "after cycle 6, two separate tripod lifts recenter feet without advancing the support tripod; not additional walking cycles",
+  "notes": [
+    "No IK or trajectory planner is used. Servo-side interpolation between fixed targets remains enabled.",
+    "The C++ runtime loads poses.csv; this profile describes the authored table and is not a second angle configuration.",
+    "Demo target range is not a measurement of mechanical joint limits."
+  ],
+  "lift_candidate": {
+    "femur_position_delta_magnitude": 35,
+    "knee_position_delta_magnitude": 15
+  },
+  "hip_sweep_position_magnitude": 35,
+  "voltage_allowance": {
+    "minimum_mv": 6000,
+    "maximum_mv": 8700,
+    "inclusive": true,
+    "datasheet_maximum_mv": 8400,
+    "source": "Explicit user allowance for this demo on 2026-10-14; not an updated hardware rating",
+    "enforced_in": "src/demo.cpp voltage_check"
+  },
+  "revision": "v2-higher-larger-faster-2026-10-14",
+  "phase_timing_ms": {
+    "lift": 300,
+    "swing_or_recenter": 400,
+    "land": 300,
+    "settle": 100,
+    "standing_transition": 3000,
+    "standing_settle": 600
+  },
+  "prior_candidate": {
+    "right": [
+      500,
+      583,
+      208
+    ],
+    "left": [
+      500,
+      417,
+      792
+    ],
+    "user_observation": "stance too low; asks for higher body, larger steps and faster motion",
+    "physical_walk_verified": false
+  }
+}
