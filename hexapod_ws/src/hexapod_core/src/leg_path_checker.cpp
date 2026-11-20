@@ -28,8 +28,20 @@ void require_path_constraints(const leg_path_constraints& constraints) {
         throw std::invalid_argument("Ground plane offset must be finite");
     }
 
-    if (!std::isfinite(constraints.minimum_clearance_m) || constraints.minimum_clearance_m < 0.0) {
-        throw std::invalid_argument("Minimum clearance must be finite and nonnegative");
+    if (!std::isfinite(constraints.minimum_clearance_m)) {
+        throw std::invalid_argument("Minimum clearance must be finite");
+    }
+
+    if (constraints.maximum_clearance_m) {
+        const double maximum = *constraints.maximum_clearance_m;
+
+        if (!std::isfinite(maximum)) {
+            throw std::invalid_argument("Maximum clearance must be finite");
+        }
+
+        if (maximum < constraints.minimum_clearance_m) {
+            throw std::invalid_argument("Maximum clearance must not be below minimum clearance");
+        }
     }
 }
 
@@ -62,16 +74,92 @@ leg_path_check_result leg_path_checker::check_linear_segment(
     const leg_joint_angles& start_nominal,
     const leg_joint_angles& end_nominal,
     std::size_t interval_count,
-    const leg_path_constraints& constraints //约束
+    const leg_path_constraints& constraints
 ) const {
-
     require_path_constraints(constraints);
 
-    // 先取得三个关节的限位，配置不完整时明确报错。
+    const auto samples = sampler_.sample_linear_segment(
+        leg,
+        start_nominal,
+        end_nominal,
+        interval_count
+    );
+
+    // 固定约束入口：为每个采样点复制同一份约束。
+    const std::vector<leg_path_constraints> sample_constraints(
+        samples.size(),
+        constraints
+    );
+
+    return check_samples(
+        leg,
+        samples,
+        sample_constraints
+    );
+}
+
+
+leg_path_check_result
+leg_path_checker::check_linear_segment_with_sample_constraints(
+    leg_id leg,
+    const leg_joint_angles& start_nominal,
+    const leg_joint_angles& end_nominal,
+    std::size_t interval_count,
+    const std::vector<leg_path_constraints>& sample_constraints
+) const {
+    if (interval_count == 0) {
+        throw std::invalid_argument(
+            "Path checking requires at least one interval"
+        );
+    }
+
+    const auto maximum_sample_count =
+        std::vector<leg_path_sample>{}.max_size();
+
+    if (interval_count >= maximum_sample_count) {
+        throw std::length_error(
+            "Path checking interval count is too large"
+        );
+    }
+
+    // 使用减法形式核对数量，避免直接计算 interval_count + 1。
+    if (sample_constraints.empty()
+        || sample_constraints.size() - 1 != interval_count) {
+        throw std::invalid_argument(
+            "Path constraint count must match path sample count"
+        );
+    }
+
+    // 先检查整份输入。
+    // 即使前面的路径点会失败，也不能忽略后面的非法约束。
+    for (const auto& constraints : sample_constraints) {
+        require_path_constraints(constraints);
+    }
+
+    const auto samples = sampler_.sample_linear_segment(
+        leg,
+        start_nominal,
+        end_nominal,
+        interval_count
+    );
+
+    return check_samples(
+        leg,
+        samples,
+        sample_constraints
+    );
+}
+
+
+leg_path_check_result leg_path_checker::check_samples(leg_id leg, const std::vector<leg_path_sample>& samples, const std::vector<leg_path_constraints>& sample_constraints) const {
+    // 私有函数的调用关系应当保证这一条件。
+    if (samples.empty() || samples.size() != sample_constraints.size()) {
+        throw std::logic_error( "Path samples and constraints are inconsistent");
+    }
+
     std::array<angle_limits, joints_per_leg> limits{};
 
     for (std::size_t joint_offset = 0; joint_offset < joints_per_leg; ++joint_offset) {
-
         const auto& joint = model_.joint(leg, joint_order[joint_offset]);
 
         if (!model_.is_command_ready(joint.binding.id)) {
@@ -81,20 +169,26 @@ leg_path_check_result leg_path_checker::check_linear_segment(
         limits[joint_offset] = *joint.calibration.installed_limits;
     }
 
-    const auto samples = sampler_.sample_linear_segment(leg, start_nominal, end_nominal, interval_count);
-
-    // 与当前 mapper、参考角检查采用的数值尺度保持一致。
-    // 只吸收浮点误差，不表示机械限位余量。
+    // 仅吸收浮点计算误差，不表示机械限位余量。
     constexpr double angle_numerical_tolerance = 1e-12;
 
     for (std::size_t sample_index = 0; sample_index < samples.size(); ++sample_index) {
-
         const auto& sample = samples[sample_index];
 
-        const std::array<double, joints_per_leg> angles{sample.angles.yaw_rad, sample.angles.upper_leg_rad, sample.angles.lower_leg_rad};
+        // 本次最关键的变化：
+        // 使用与当前采样点一一对应的约束。
+        const auto& constraints = sample_constraints[sample_index];
 
-        // 同一个采样点内，先检查三个关节。
-        for (std::size_t joint_offset = 0; joint_offset < joints_per_leg; ++joint_offset) {
+        const std::array<double, joints_per_leg> angles{
+            sample.angles.yaw_rad,
+            sample.angles.upper_leg_rad,
+            sample.angles.lower_leg_rad
+        };
+
+        // 同一采样点内，先检查三个关节安装限位。
+        for (std::size_t joint_offset = 0;
+             joint_offset < joints_per_leg;
+             ++joint_offset) {
             const auto& joint_limits = limits[joint_offset];
 
             const bool below_minimum = angles[joint_offset] < joint_limits.minimum_rad - angle_numerical_tolerance;
@@ -102,7 +196,10 @@ leg_path_check_result leg_path_checker::check_linear_segment(
             const bool above_maximum = angles[joint_offset] > joint_limits.maximum_rad + angle_numerical_tolerance;
 
             if (below_minimum || above_maximum) {
-                leg_path_check_result result{leg_path_check_status::joint_limit_exceeded, sample_index + 1};
+                leg_path_check_result result{
+                    leg_path_check_status::joint_limit_exceeded,
+                    sample_index + 1
+                };
 
                 result.failed_sample_index = sample_index;
                 result.failed_sample = sample;
@@ -112,8 +209,10 @@ leg_path_check_result leg_path_checker::check_linear_segment(
             }
         }
 
-        // 关节角通过后，再检查脚端离面距离。
-        const double clearance_m = signed_clearance(constraints.ground, sample.point_in_body);
+        const double clearance_m = signed_clearance(
+            constraints.ground,
+            sample.point_in_body
+        );
 
         if (clearance_m < constraints.minimum_clearance_m) {
             leg_path_check_result result{leg_path_check_status::foot_clearance_below_minimum, sample_index + 1};
@@ -124,9 +223,23 @@ leg_path_check_result leg_path_checker::check_linear_segment(
 
             return result;
         }
+
+        if (constraints.maximum_clearance_m && clearance_m > *constraints.maximum_clearance_m) {
+            
+            leg_path_check_result result{leg_path_check_status::foot_clearance_above_maximum, sample_index + 1};
+
+            result.failed_sample_index = sample_index;
+            result.failed_sample = sample;
+            result.failed_clearance_m = clearance_m;
+
+            return result;
+        }
     }
 
-    return leg_path_check_result{leg_path_check_status::samples_passed, samples.size()};
+    return leg_path_check_result{
+        leg_path_check_status::samples_passed,
+        samples.size()
+    };
 }
 
 }  // namespace hexapod_core

@@ -10,7 +10,7 @@ struct swing_trajectory_request {
     // 起终点位置，单位 m。
     vector3 start_in_planning_frame;
     vector3 end_in_planning_frame;
-
+ 
     // 抬升方向：有限单位向量。
     vector3 lift_direction_in_planning_frame;
 

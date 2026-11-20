@@ -19,8 +19,34 @@ void require_segment_request(const body_segment_request& request) {
         throw std::length_error("Body segment path interval count is too large");
     }
 
-    for (const double minimum_clearance : request.minimum_clearance_m) {
-        require_path_constraints(leg_path_constraints{request.ground, minimum_clearance});
+    if (request.sample_constraints) {
+        // 逐点模式：先校验全部腿、全部采样约束。
+        const auto& all_constraints = *request.sample_constraints;
+
+        for (const auto leg : leg_order) {
+            const auto index = leg_index(leg);
+            const auto& constraints = all_constraints[index];
+
+            if (constraints.empty() || constraints.size() - 1 != request.interval_count) {
+                throw std::invalid_argument("Each leg requires one constraint per path sample");
+            }
+
+            for (const auto& sample_constraints : constraints) {
+                require_path_constraints(sample_constraints);
+            }
+        }
+
+        return;
+    }
+
+    for (const auto leg : leg_order) {
+        const auto index = leg_index(leg);
+
+        require_path_constraints(leg_path_constraints{
+            request.ground,
+            request.minimum_clearance_m[index],
+            request.maximum_clearance_m[index]
+        });
     }
 }
 
@@ -30,7 +56,7 @@ body_segment_planner::body_segment_planner(robot_model model) : solver_(model), 
 
 //上层已经利用sample_swing_trajectory将运动轨迹分成了若干段，plan用于检查当前段的链路
 body_segment_result body_segment_planner::plan(const body_segment_request& request) const {
-
+    // 无论后续选解是否成功，都先校验本次使用的完整约束
     require_segment_request(request);
 
     auto selected = solver_.solve(request.target_request);
@@ -62,20 +88,36 @@ body_segment_result body_segment_planner::plan(const body_segment_request& reque
 
         const auto index = leg_index(leg);
 
-        const leg_path_constraints constraints{request.ground, request.minimum_clearance_m[index]};
-
-        const auto checked = path_checker_.check_linear_segment(leg, request.target_request.reference_angles[index], solution.nominal_angles[index], request.interval_count, constraints);
+        const auto checked = request.sample_constraints
+            ? path_checker_.check_linear_segment_with_sample_constraints(
+                leg,
+                request.target_request.reference_angles[index],
+                solution.nominal_angles[index],
+                request.interval_count,
+                (*request.sample_constraints)[index]
+            )
+            : path_checker_.check_linear_segment(
+                leg,
+                request.target_request.reference_angles[index],
+                solution.nominal_angles[index],
+                request.interval_count,
+                leg_path_constraints{
+                    request.ground,
+                    request.minimum_clearance_m[index],
+                    request.maximum_clearance_m[index]
+                }
+            );
 
         switch (checked.status) {
             case leg_path_check_status::samples_passed:
                 break;
 
             case leg_path_check_status::joint_limit_exceeded:
-
-
-            case leg_path_check_status::foot_clearance_below_minimum: {
-
-                body_segment_result result{body_segment_status::path_check_failed};
+            case leg_path_check_status::foot_clearance_below_minimum:
+            case leg_path_check_status::foot_clearance_above_maximum: {
+                body_segment_result result{
+                    body_segment_status::path_check_failed
+                };
 
                 result.failed_leg = leg;
                 result.path_failure = checked;

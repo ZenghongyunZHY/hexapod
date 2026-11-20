@@ -1,5 +1,29 @@
 # hexapod_core：物理模型、关节角转换与单腿运动学
 
+2026-11-16 六腿逐点约束进度：我已扩展 body_segment_request 与预校验，我请助手补齐 sampled_constraints 成员初始化、固定/逐点检查条件分支两处漏接，并扩展正式 body_segment_tests.cpp。Windows 严格构建及完整 CTest 22/22 通过，覆盖六腿每个采样位置的上下界失败、表内平面、全部表项在 IK 前校验、空表拒绝和输入不变。45 个生产文件中仅上述头文件与实现因修复变化，硬件 JSON 不变。周期层尚未生成逐点表，原前移候选继续严格拒绝；下一步保存帧边界事件完成后的摆动曲线，再生成段内约束。证据位于 build/validation-body-sampled-clearance-20261116/；本轮未连接或同步 Pi，未执行动作。
+
+2026-11-09 逐采样点约束进度：我已实现 check_linear_segment_with_sample_constraints() 和共用逐点检查，以及 foot_clearance_policy。我请助手补策略源文件登记、新增正式 foot_clearance_policy_tests.cpp、扩展 path_checker_tests.cpp，Windows 严格构建及完整 CTest 22/22 通过。测试覆盖六腿逐点上下界、约束表长度与全部输入预校验、不同采样平面、下降段端点接触上界及策略非法输入。45 个生产文件及硬件 JSON 在测试维护前后哈希一致。六腿段和整周期仍使用原固定约束，前移候选继续严格拒绝；下一步连接六腿逐点约束表。证据位于 build/validation-sampled-clearance-20261109/；本轮未连接或同步 Pi，未执行动作。
+
+2026-11-08 离面上下界补充：leg_path_constraints 支持有限的有符号下界与可选有限上界；有上界时要求其不小于下界，边界等号允许通过。body_segment_planner 在选解前校验六腿上下界，并完整传递上界失败诊断。助手扩展正式路径/六腿段测试，Windows 严格构建及完整 CTest 21/21 通过。当前上下界在单个检查段内固定，周期规划器仍使用严格下界 0；按相位配置及段内变化尚待接入。证据位于 build/validation-clearance-bounds-20261108/，本轮未同步 Pi 或执行动作。
+
+2026-11-08 整周期关节规划补充：用户已实现 tripod_cycle_planner，助手补 CMake 和正式 tripod_cycle_planner_tests.cpp。Windows 严格构建及 CTest 21/21 通过，静止零抬升周期可完整返回，初始参考不一致及后续不可达/速度/路径失败均保留诊断且不返回部分周期。前移 0.5 mm/s、抬升 3 mm 的另一个候选仍被严格地面检查拒绝：第 8 个目标帧右前腿路径比例 0.25 处名义距离 -0.0588671 mm，名义终点 -0.234827 mm，而理想目标距离为 0。此为离线量化模型诊断，不是实测穿地。下一步明确接触误差与离面约束契约；证据位于 build/validation-tripod-cycle-planner-20261108/。本轮未连接或同步 Pi，成功同步基线仍为 2026-11-02。
+
+2026-11-08 最新本地进度：用户已实现 tripod_foot_cycle，组合完整周期的机身位姿、固定落脚点、计划起落脚和六腿理想脚点。助手补 CMake 与正式 tripod_foot_cycle_tests.cpp，Windows 严格构建及 CTest 20/20 通过、0 failures，约 2.89 秒。验证包含独立落脚/抬升预期、固定支撑、半占空比首尾、带转向的两周期几何衔接和非法输入。该层尚未验证整周期关节目标和路径，下一步为整周期关节规划组合器。证据位于 build/validation-tripod-foot-cycle-20261108/；本轮未连接或同步 Pi，成功同步基线仍为 2026-11-02。
+
+2026-11-07 后续本地进度：用户已实现 tripod_sampling，按边界区间均匀插点，精确保留边界与事件。助手补 CMake 和正式 tripod_sampling_tests.cpp，Windows 严格构建及 CTest 19/19 通过、0 failures，约 2.76 秒。测试覆盖独立时间表、点数/严格顺序、边界只出现一次、半占空比同刻事件、容器容量和不可分辨采样点拒绝。下一步组合完整周期的脚点几何规划。证据位于 build/validation-tripod-sampling-20261107/；本轮未连接或同步 Pi，成功同步基线仍为 2026-11-02。
+
+2026-11-07 最新本地进度：用户已实现 tripod_timing.hpp/.cpp，生成一个三脚周期的起脚/计划落脚边界。助手补上遗漏的核心源文件和正式 tripod_timing_tests.cpp 登记，Windows 严格构建及完整 CTest 18/18 通过、0 failures，约 2.84 秒。验证包含精确边界、0.5 占空比同刻事件、逐腿起落一次、状态类衔接、区间相位一致性和时间分辨率不足拒绝。下一步在边界之间插入离线采样点；当前没有生成完整周期运动目标或执行动作。证据位于 build/validation-tripod-timing-20261107/，本轮未连接或同步 Pi，最新成功同步基线仍为 2026-11-02。下方各日期保留历史状态。
+
+2026-11-06 中点参考恢复与本地实现：用户明确恢复下一支撑期中点参考，并因使用 Remote Control 授权助手直接改写现有 swing_landing.hpp/.cpp，沿用原缩进、换行和传参风格。类型改为 stance_midpoint_reference，参考字段改为 midpoint_reference_in_body，增加 next_stance_duration_s，预测时长恢复 T_swing+T_stance/2，地面高度与固定摆动终点契约保留。助手补齐 CMake 和正式 swing_landing_tests.cpp，Windows 严格构建及完整 CTest 17/17 通过、0 failures，约 2.48 秒，包含 20 段摆动和 10 段支撑的集成。证据位于 build/validation-swing-landing-midpoint-20261106/。Pi SSH 连接超时，本版未同步或在 Pi 验证，最新同步基线仍为 2026-11-02。
+
+2026-11-06 最新本地进度：用户已实现 gait_foot_state.hpp/.cpp，保存规划支撑锚点及摆动曲线，通过返回候选副本组织起脚/计划落脚转换；助手补上遗漏的核心源文件和正式 gait_foot_state_tests.cpp 登记，Windows 严格构建及完整 CTest 16/16 通过、0 failures，约 2.70 秒。测试覆盖六腿生命周期、副本隔离、错误转换、非法几何和采样器起落脚衔接；33 个生产输入测试前后哈希一致。证据位于 build/validation-gait-foot-state-20261106/。下一步为基于预测机身位姿选择落脚点；本轮未连接或同步 Pi，成功同步基线仍为 2026-11-02。
+
+2026-11-05 最新本地进度：用户已实现 body_foot_targets.hpp/.cpp，按各腿计划阶段选择规划参考系固定支撑点或摆动曲线，再统一转换为机身脚点；助手补上遗漏的核心源文件和正式 body_foot_target_tests.cpp 登记，Windows 严格构建及完整 CTest 15/15 通过、0 failures，约 2.41 秒。新增机身缓慢前移与 B 组三脚摆动的 20 段六腿规划用例，最大名义 FK 差约 0.549331 mm，仅为离线模型结果。31 个生产输入测试前后哈希一致，证据位于 build/validation-body-foot-targets-20261105/。下一步为起脚/计划落脚时的脚点状态保存；本轮未连接或同步 Pi，最新成功同步基线仍为 2026-11-02。
+
+2026-11-04 后续本地进度：用户已实现 body_motion.hpp/.cpp 的恒定机身坐标速度积分；助手补上遗漏的核心源文件与正式 body_motion_tests.cpp 登记，Windows 严格构建及完整 CTest 14/14 通过、0 failures，约 2.29 秒。测试包含独立圆弧预期、Simpson 数值积分、小角度及分段一致性。29 个生产输入测试前后哈希一致，证据位于 build/validation-body-motion-20261104/。下一步为六腿支撑/摆动脚点采样组合。本轮未连接或同步 Pi，最新成功同步基线仍为 2026-11-02；以下按日期和发生顺序保留较早进度。
+
+2026-11-04 最新本地进度：用户已实现 body_pose.hpp/.cpp 的纯偏航机身/规划参考坐标双向点变换；助手补上遗漏的核心源文件登记和正式 body_pose_tests.cpp，Windows 严格构建及完整 CTest 13/13 通过、0 failures，约 2.06 秒。27 个生产输入测试前后哈希一致，证据位于 build/validation-body-pose-20261104/。下一步为恒定机身速度的规划位姿积分。本轮未连接或同步 Pi，Pi 保留 2026-11-02 的 11/11 版本，成功同步基线不变；未执行实机动作。下方按日期保留前一阶段状态。
+
 截至 2026-11-03，已实现 types.hpp、robot_model、joint_mapper、leg_kinematics 的局部/机身 FK、双向坐标变换及局部/机身 IK 候选，leg_candidate_selector 的映射过滤、分支/奇异策略选择和可选名义平均速度检查，body_ik_solver 的六腿整体求解，单腿关节角线性插值、机身脚端路径采样和限位/平面距离离散检查，body_segment_planner 的六腿段组合规划，脚端摆动目标曲线、可运行离线预览及 tripod_phase 交替三脚相位采样。最新 Windows 严格构建及 CTest 12/12 通过；Pi 保留 2026-11-02 版本及 CTest 11/11 的验证，本地相位新增尚未同步。最新同步基线仍为 2026-11-02，未执行实机动作。使用 C++17，自定义类、函数、变量与文件名统一使用下划线命名；代码中提供中文注释。
 
 这些都是项目自定义代码，不是 ROS 2 自带工具：`.hpp` 是接口头文件，`.cpp` 是实现文件。核心代码可以脱离 ROS 编译；在 ROS 2 环境下通过 ament/colcon 构建。
@@ -33,9 +57,20 @@
 | include/hexapod_core/foot_trajectory.hpp、src/foot_trajectory.cpp | 同一显式规划参考中的五次平滑基线与六次抬升曲线，精确端点和输入校验 |
 | test/foot_trajectory_tests.cpp | 独立分数点、端点平缓性、刚体坐标变换、数值边界及 20 段单腿离线集成 |
 | examples/single_leg_swing_preview.cpp | 独立纯离线预览入口，全部段规划成功后输出理想/名义脚点和 18 轴位置 CSV |
+| examples/tripod_sequence_preview.cpp | 四周期离线预览入口，输出统一时间轴、段时长和 18 轴名义位置 |
 | test/preview_cli_tests.py | 调用真实可执行文件检查 20×25 CSV、15 固定轴、几何/时间和失败时无 CSV |
 | include/hexapod_core/tripod_phase.hpp、src/tripod_phase.cpp | 交替三脚分组、支撑/摆动阶段及阶段进度的无状态采样 |
 | test/tripod_phase_tests.cpp | 整数时间表、分组/支撑时长、半周期互换、浮点边界、非法输入和摆动曲线连接 |
+| include/hexapod_core/body_pose.hpp、src/body_pose.cpp | 显式规划机身原点和偏航角，机身/规划参考坐标双向点变换 |
+| test/body_pose_tests.cpp | 独立平移/旋转预期、刚体距离、往返、固定支撑脚、非法输入和溢出检查 |
+| include/hexapod_core/body_motion.hpp、src/body_motion.cpp | 恒定机身坐标 vx/vy/wz 的圆弧积分，保持高度并连续累积偏航 |
+| test/body_motion_tests.cpp | 独立圆弧/数值积分、小角度、分段一致性、输入完整性和溢出检查 |
+| include/hexapod_core/body_foot_targets.hpp、src/body_foot_targets.cpp | 按六腿计划阶段选择固定支撑点/摆动采样，并输出规划参考系与机身脚点 |
+| test/body_foot_target_tests.cpp | 混合六腿、端点衔接、固定支撑、请求完整性、异常传播和机身移动下的六腿段集成 |
+| include/hexapod_core/gait_foot_state.hpp、src/gait_foot_state.cpp | 保存规划锚点/摆动曲线，起脚和计划落脚返回更新后的候选副本 |
+| test/gait_foot_state_tests.cpp | 六腿状态转换、副本隔离、非法转换/几何、下一摆动起点和采样衔接 |
+| include/hexapod_core/swing_landing.hpp、src/swing_landing.cpp | 按下一支撑时间中点的机身水平参考脚位预测固定规划落脚点 |
+| test/swing_landing_tests.cpp | 212/200/188 mm 独立预期、反向/横移/转向、中点性质、输入/溢出及摆动到支撑集成 |
 
 ## 三脚相位本地进度（2026-11-03）
 
@@ -60,6 +95,14 @@ ros2 run hexapod_core single_leg_swing_preview \
 ```
 
 Windows 对应可执行文件为 build/hexapod_core_standalone/single_leg_swing_preview.exe，传入 config/robot_hardware.json 的实际路径。程序完整规划后才输出 20 行段终点记录：规划时间、理想脚点、名义 FK 脚点及 p1～p18，共 25 列；诊断写入 stderr。数据行从 0.1 s 到 2.0 s，不另输出 0 s 初始参考。Python 3 仅用于新增 CLI 测试，已在 BUILD_TESTING 中明确查找并在 package.xml 声明 test_depend。
+
+从 `hexapod_ws` 目录导出多周期预览。
+
+```powershell
+.\build\hexapod_core_standalone\tripod_sequence_preview.exe .\config\robot_hardware.json > .\build\tripod_sequence_preview.csv
+```
+
+该示例固定使用四周期离线回归输入。全部周期通过检查后，stdout 输出 100 行数据，每行是一个运动段。五列周期及时序数据依次为 `cycle_index`、`end_frame_index`、`start_time_s`、`end_time_s`、`duration_s`，随后是按物理 ID 排列的 `p1` 至 `p18`。每周期的首段对应终点帧 1，下一周期的首段从上一周期的终点时刻开始。诊断写入 stderr。
 
 本轮 Windows/Pi CTest 均 11/11，Pi 安装后 CLI 验证通过，两端 CSV 忽略换行形式后文本一致，数值最大差 0。原始模型回归最大名义 FK 误差约 0.392578 mm；CSV 六位小数再计算为约 0.391922 mm，二者精度层次不同，均不是实测精度。审计日志、CSV、哈希与三方比较记录位于工作区 build/deployment-20261102/；同步前有旧源码备份，未同步构建产物或驱动舵机。以下较早章节保留当时阶段状态。
 
@@ -248,7 +291,7 @@ cd /home/hexapod/hexapod_ws
 
 当前系统总内存约 899 MiB、无交换空间。colcon 会按 CPU 核数自动设置 make 并行参数，因此脚本显式设置 MAKEFLAGS=-j1；只设置 CMAKE_BUILD_PARALLEL_LEVEL 不足以限制该路径。验证使用 Debug / -O0 -g0，并将脚本子进程虚拟内存限制在 512 MiB，避免一次构建耗尽整机内存。该限制不修改系统配置。
 
-使用模型的测试程序接收仓库真实 config/robot_hardware.json 的路径；相位测试不需要模型配置。当前 Windows CTest 共 12 项，覆盖模型/映射、IK、选择器、连接速度、六腿 IK、关节插值、路径采样、路径约束、六腿段、脚端曲线、三脚相位和预览 CLI。CLI 测试通过 Python 3 调用实际构建的程序，不创建影子实现。默认配置路径为源码相对路径 ../../config/robot_hardware.json，可通过 -Dhardware_config_path=/绝对路径 指定；单独复制包时须提供实际配置。
+使用模型的测试程序接收仓库真实 config/robot_hardware.json 的路径；相位、机身位姿变换、速度积分、脚点状态和离面策略测试不需要模型配置。当前 Windows CTest 共 22 项，覆盖模型/映射、IK、选择器、连接速度、六腿 IK、关节插值、路径采样、路径约束、六腿段、脚端曲线、三脚相位、机身位姿变换、速度积分、六腿脚点采样、脚点状态转换、支撑中点落脚规划、周期边界、周期采样、完整周期脚点、整周期关节规划、离面策略及预览 CLI。CLI 测试通过 Python 3 调用实际构建的程序，不创建影子实现。默认配置路径为源码相对路径 ../../config/robot_hardware.json，可通过 -Dhardware_config_path=/绝对路径 指定；单独复制包时须提供实际配置。
 
 普通 CMake 环境也可构建，不需要安装 ROS：
 

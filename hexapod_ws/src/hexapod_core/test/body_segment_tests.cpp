@@ -6,6 +6,8 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace hexapod_core;
 
@@ -74,14 +76,15 @@ void require_selection_failure(const body_segment_result& result, leg_id leg,
         "selection failure returns no solution or path failure");
 }
 
-void require_path_failure(const body_segment_result& result, leg_id leg) {
+void require_path_failure(const body_segment_result& result, leg_id leg,
+    leg_path_check_status status = leg_path_check_status::foot_clearance_below_minimum) {
     require(result.status == body_segment_status::path_check_failed
         && result.failed_leg == leg && result.path_failure,
         "path failure preserves leg and detail");
     require(!result.solution && !result.selection_failure,
         "path failure returns no partially accepted solution");
     require(result.path_failure->status
-        == leg_path_check_status::foot_clearance_below_minimum,
+        == status,
         "plane failure status survives composition");
     require(result.path_failure->failed_sample_index
         && result.path_failure->failed_sample
@@ -209,6 +212,188 @@ void test_nominal_endpoint(const robot_model& model) {
         "path interpolates toward decoded nominal angle rather than ideal angle");
 }
 
+void test_upper_and_signed_bounds(const robot_model& model) {
+    const leg_kinematics kinematics(model);
+    const body_segment_planner planner(model);
+    for (const auto leg : leg_order) {
+        auto request = fixture(kinematics);
+        request.maximum_clearance_m[leg_index(leg)] = 0;
+        const auto failed = planner.plan(request);
+        require_path_failure(failed, leg, leg_path_check_status::foot_clearance_above_maximum);
+        require(failed.path_failure->failed_sample_index == 0,
+            "each leg's upper bound reaches checker");
+        request = fixture(kinematics);
+        request.minimum_clearance_m[leg_index(leg)] = -1;
+        require_pass(planner.plan(request));
+
+        for (const double maximum : {std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(), -1.0}) {
+            request = fixture(kinematics);
+            request.maximum_clearance_m[leg_index(leg)] = maximum;
+            request.target_request.points_in_body[0] = kinematics.leg_to_body_frame(
+                leg_id::right_front, {0, -1, 0});
+            require_throws<std::invalid_argument>([&] { (void)planner.plan(request); },
+                "all upper bounds validated before early target failure");
+        }
+    }
+    const auto legacy = fixture(kinematics);
+    for (const auto& maximum : legacy.maximum_clearance_m) {
+        require(!maximum, "legacy request leaves upper bound absent");
+    }
+    std::array<std::optional<double>, leg_count> maxima{};
+    maxima.fill(2);
+    const body_segment_request explicit_bounds{legacy.target_request, legacy.ground,
+        legacy.minimum_clearance_m, legacy.interval_count, maxima};
+    require_pass(planner.plan(explicit_bounds));
+}
+
+body_segment_request sampled_fixture(const leg_kinematics& kinematics) {
+    const auto fixed = fixture(kinematics);
+    body_path_constraint_samples constraints{};
+    for (const auto leg : leg_order) {
+        const auto index = leg_index(leg);
+        for (std::size_t sample = 0; sample <= fixed.interval_count; ++sample) {
+            // 逐腿、逐点采用不同平面偏移，核对表内平面也参与检查。
+            const double offset = 0.25 + 0.02 * static_cast<double>(index)
+                + 0.01 * static_cast<double>(sample);
+            constraints[index].emplace_back(ground_plane_in_body{{0, 0, 1}, offset}, -2.0, 2.0);
+        }
+    }
+    return {fixed.target_request, fixed.ground, fixed.minimum_clearance_m,
+        fixed.interval_count, fixed.maximum_clearance_m, std::move(constraints)};
+}
+
+void require_sampled_request_unchanged(const body_segment_request& actual,
+    const body_segment_request& before) {
+    require(actual.sample_constraints && before.sample_constraints, "request retains sampled mode");
+    for (std::size_t leg = 0; leg < leg_count; ++leg) {
+        const auto& current_angles = actual.target_request.reference_angles[leg];
+        const auto& saved_angles = before.target_request.reference_angles[leg];
+        require(current_angles.yaw_rad == saved_angles.yaw_rad
+            && current_angles.upper_leg_rad == saved_angles.upper_leg_rad
+            && current_angles.lower_leg_rad == saved_angles.lower_leg_rad, "caller references unchanged");
+        require(actual.target_request.remembered_branches[leg].radial
+                == before.target_request.remembered_branches[leg].radial
+            && actual.target_request.remembered_branches[leg].knee
+                == before.target_request.remembered_branches[leg].knee, "caller branches unchanged");
+        const auto& current = (*actual.sample_constraints)[leg];
+        const auto& saved = (*before.sample_constraints)[leg];
+        require(current.size() == saved.size(), "constraint count unchanged");
+        for (std::size_t point = 0; point < saved.size(); ++point) {
+            require(current[point].ground.unit_normal.x == saved[point].ground.unit_normal.x
+                && current[point].ground.unit_normal.y == saved[point].ground.unit_normal.y
+                && current[point].ground.unit_normal.z == saved[point].ground.unit_normal.z
+                && current[point].ground.offset_m == saved[point].ground.offset_m
+                && current[point].minimum_clearance_m == saved[point].minimum_clearance_m
+                && current[point].maximum_clearance_m == saved[point].maximum_clearance_m,
+                "constraint table unchanged");
+        }
+    }
+}
+
+void test_sampled_mode(const robot_model& model) {
+    const leg_kinematics kinematics(model);
+    const body_segment_planner planner(model);
+    auto request = sampled_fixture(kinematics);
+    require(request.sample_constraints.has_value(), "constructor must preserve provided table");
+    const auto before = request;
+    const auto result = planner.plan(request);
+    require_pass(result);
+    require_sampled_request_unchanged(request, before);
+    const auto fixed_result = planner.plan(fixture(kinematics));
+    require_pass(fixed_result);
+    for (std::size_t id = 0; id < joint_count; ++id) {
+        require(result.solution->targets.nominal_positions[id]->value() == expected_positions[id]
+            && result.solution->targets.nominal_positions[id]->value()
+                == fixed_result.solution->targets.nominal_positions[id]->value(),
+            "sample mode preserves eighteen-axis target selection");
+    }
+
+    // 固定字段在逐点模式下明确不参与检查；未提供表时仍沿用固定模式。
+    request.ground.unit_normal = {0, 0, 2};
+    request.minimum_clearance_m.fill(std::numeric_limits<double>::quiet_NaN());
+    request.maximum_clearance_m.fill(-10.0);
+    require_pass(planner.plan(request));
+    request.sample_constraints.reset();
+    require_throws<std::invalid_argument>([&] { (void)planner.plan(request); },
+        "clearing optional restores fixed constraint validation");
+
+    for (const auto leg : leg_order) {
+        const auto index = leg_index(leg);
+        for (std::size_t point = 0; point <= 4; ++point) {
+            for (const bool upper : {false, true}) {
+                request = sampled_fixture(kinematics);
+                const double ratio = static_cast<double>(point) / 4.0;
+                auto& constraint = (*request.sample_constraints)[index][point];
+                // 独立几何高度：q2 从理想角连接到预期整数位置解码后的角，q3 不变。
+                const double q2 = degrees_to_radians(desired_degrees[index][1] - 0.1 * ratio);
+                const double q3 = degrees_to_radians(desired_degrees[index][2]);
+                const double clearance = 0.021 + 0.0742 * std::sin(q2)
+                    + 0.11253 * std::sin(q2 + q3) + constraint.ground.offset_m;
+                if (upper) constraint.maximum_clearance_m = clearance - 1e-5;
+                else constraint.minimum_clearance_m = clearance + 1e-5;
+                const auto snapshot = request;
+                const auto failed = planner.plan(request);
+                require_path_failure(failed, leg, upper ? leg_path_check_status::foot_clearance_above_maximum
+                    : leg_path_check_status::foot_clearance_below_minimum);
+                require(failed.path_failure->failed_sample_index == point
+                    && failed.path_failure->checked_sample_count == point + 1, "each leg/sample index forwarded");
+                near(failed.path_failure->failed_sample->ratio, ratio, "segment failure ratio forwarded");
+                near(*failed.path_failure->failed_clearance_m, clearance, "independent per-point plane clearance");
+                require_sampled_request_unchanged(request, snapshot);
+            }
+        }
+        request = sampled_fixture(kinematics);
+        request.target_request.points_in_body[index] = kinematics.leg_to_body_frame(leg, {0, -1, 0});
+        const auto snapshot = request;
+        require_selection_failure(planner.plan(request), leg, leg_selection_status::geometric_unreachable);
+        require_sampled_request_unchanged(request, snapshot);
+    }
+}
+
+void test_sampled_validation(const robot_model& model) {
+    const leg_kinematics kinematics(model);
+    const body_segment_planner planner(model);
+    for (const auto leg : leg_order) {
+        const auto index = leg_index(leg);
+        for (const std::size_t size : {0U, 1U, 4U, 6U}) {
+            auto request = sampled_fixture(kinematics);
+            auto& table = (*request.sample_constraints)[index];
+            if (size <= table.size()) table.erase(table.begin() + size, table.end());
+            else table.push_back(table.back());
+            request.target_request.points_in_body[0] = kinematics.leg_to_body_frame(leg_id::right_front, {0, -1, 0});
+            require_throws<std::invalid_argument>([&] { (void)planner.plan(request); },
+                "every leg requires exactly N+1 entries before IK");
+        }
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const std::vector<leg_path_constraints> invalid{
+            {{{nan, 0, 1}, 0}, 0}, {{{0, 0, 2}, 0}, 0}, {{{0, 0, 1}, nan}, 0},
+            {{{0, 0, 1}, 0}, nan}, {{{0, 0, 1}, 0}, 0, nan}, {{{0, 0, 1}, 0}, 0.002, 0.001}};
+        for (const auto& bad : invalid) {
+            for (const bool early_selection_failure : {false, true}) {
+                auto request = sampled_fixture(kinematics);
+                (*request.sample_constraints)[index].back() = bad;
+                if (early_selection_failure) {
+                    request.target_request.points_in_body[0] = kinematics.leg_to_body_frame(leg_id::right_front, {0, -1, 0});
+                } else {
+                    (*request.sample_constraints)[0][0].minimum_clearance_m = 1.0;
+                }
+                require_throws<std::invalid_argument>([&] { (void)planner.plan(request); },
+                    "late invalid constraint precedes selection or path failure");
+            }
+        }
+    }
+    auto request = sampled_fixture(kinematics);
+    request.sample_constraints = body_path_constraint_samples{};
+    require_throws<std::invalid_argument>([&] { (void)planner.plan(request); },
+        "present empty table never falls back to fixed mode");
+    request = sampled_fixture(kinematics);
+    request.interval_count = 0;
+    require_throws<std::invalid_argument>([&] { (void)planner.plan(request); }, "sample mode zero intervals");
+    request.interval_count = std::numeric_limits<std::size_t>::max();
+    require_throws<std::length_error>([&] { (void)planner.plan(request); }, "sample mode impossible count");
+}
+
 void test_invalid_input(const robot_model& model) {
     const leg_kinematics kinematics(model);
     const body_segment_planner planner(model);
@@ -220,7 +405,7 @@ void test_invalid_input(const robot_model& model) {
     require_throws<std::length_error>([&] { (void)planner.plan(request); },
         "impossible sample count");
     for (std::size_t leg = 0; leg < leg_count; ++leg) {
-        for (const double value : {-1.0, std::numeric_limits<double>::quiet_NaN(),
+        for (const double value : {std::numeric_limits<double>::quiet_NaN(),
             std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()}) {
             request = fixture(kinematics);
             request.minimum_clearance_m[leg] = value;
@@ -254,9 +439,12 @@ int main(int argc, char** argv) {
         test_selection_failures(model);
         test_path_failures(model);
         test_nominal_endpoint(model);
+        test_upper_and_signed_bounds(model);
+        test_sampled_mode(model);
+        test_sampled_validation(model);
         test_invalid_input(model);
         std::cout << "PASS: complete body segment, selection/path failure separation, "
-            "atomic rejection, nominal endpoint and request validation.\n";
+            "six-leg sampled bounds, atomic rejection, nominal endpoint and request validation.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

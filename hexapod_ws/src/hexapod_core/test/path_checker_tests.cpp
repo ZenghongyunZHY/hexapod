@@ -1,7 +1,9 @@
 #include "hexapod_core/leg_path_checker.hpp"
+#include "hexapod_core/foot_clearance_policy.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
@@ -9,6 +11,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace hexapod_core;
 using json = nlohmann::json;
@@ -60,7 +63,8 @@ void require_failure(const leg_path_check_result& result,
         == (status == leg_path_check_status::joint_limit_exceeded),
         "joint metadata belongs only to joint failure");
     require(result.failed_clearance_m.has_value()
-        == (status == leg_path_check_status::foot_clearance_below_minimum),
+        == (status == leg_path_check_status::foot_clearance_below_minimum
+            || status == leg_path_check_status::foot_clearance_above_maximum),
         "clearance metadata belongs only to plane failure");
 }
 
@@ -192,8 +196,173 @@ void test_invalid_constraints(const robot_model& model) {
     }
     require_throws<std::invalid_argument>([&] {
         (void)checker.check_linear_segment(static_cast<leg_id>(99),
-            angles, angles, 1, {{{0, 0, 1}, 1}, -0.001});
+            angles, angles, 1, {{{0, 0, 1}, 1}, -0.001, -0.002});
     }, "constraints checked before model lookup");
+}
+
+void test_clearance_bands(const robot_model& model) {
+    const leg_path_checker checker(model);
+    const leg_joint_angles zero{0, 0, 0};
+    for (const auto leg : leg_order) {
+        require_pass(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, 1}, 0}, 0.021, 0.021}), 2);
+        const auto above = checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, 1}, 0}, 0, std::nextafter(0.021, 0.0)});
+        require_failure(above, leg_path_check_status::foot_clearance_above_maximum, 0, 0);
+        near(*above.failed_clearance_m, 0.021, "upper failure preserves actual clearance");
+        require_pass(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, -1}, 0}, -0.021, -0.021}), 2);
+        require_failure(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, -1}, 0}, std::nextafter(-0.021, 0.0)}),
+            leg_path_check_status::foot_clearance_below_minimum, 0, 0);
+
+        // 合成接触偏差：严格地面拒绝，显式误差带接受，缩窄下界再次拒绝。
+        require_failure(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, 1}, -0.0215}, 0}),
+            leg_path_check_status::foot_clearance_below_minimum, 0, 0);
+        require_pass(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, 1}, -0.0215}, -0.001, 0.001}), 2);
+        require_failure(checker.check_linear_segment(leg, zero, zero, 1,
+            {{{0, 0, 1}, -0.0215}, -0.0001, 0.001}),
+            leg_path_check_status::foot_clearance_below_minimum, 0, 0);
+    }
+
+    const auto last = checker.check_linear_segment(leg_id::right_middle,
+        zero, degrees(0, 60, 0), 2, {{{0, 0, 1}, 0}, 0, 0.15});
+    require_failure(last, leg_path_check_status::foot_clearance_above_maximum, 2, 1);
+    near(*last.failed_clearance_m,
+        0.021 + (0.0742 + 0.11253) * std::sin(degrees_to_radians(60)),
+        "independent final upper failure");
+
+    // 两端低于上界，内部上拱超过上界，端点检查无法发现。
+    const auto start = degrees(0, 60, 0);
+    const auto end = degrees(0, 60, 60);
+    const leg_path_constraints band{{{0, 0, 1}, 0}, 0, 0.19};
+    require_pass(checker.check_linear_segment(leg_id::right_middle, start, end, 1, band), 2);
+    const auto hump = checker.check_linear_segment(leg_id::right_middle, start, end, 2, band);
+    require_failure(hump, leg_path_check_status::foot_clearance_above_maximum, 1, 0.5);
+    near(*hump.failed_clearance_m,
+        0.021 + 0.0742 * std::sin(degrees_to_radians(60)) + 0.11253,
+        "independent internal upper failure");
+
+    for (const double maximum : {std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()}) {
+        require_throws<std::invalid_argument>([&] {
+            (void)checker.check_linear_segment(leg_id::right_middle,
+                zero, zero, 1, {{{0, 0, 1}, 0}, -0.001, maximum});
+        }, "nonfinite upper bound");
+    }
+    require_throws<std::invalid_argument>([&] {
+        require_path_constraints({{{0, 0, 1}, 0}, 0.002, 0.001});
+    }, "upper below lower");
+}
+
+void test_sample_constraints(const robot_model& model) {
+    const leg_path_checker checker(model);
+    const leg_joint_angles zero{0, 0, 0};
+    for (const auto leg : leg_order) {
+        for (const std::size_t intervals : {1U, 2U, 4U, 9U}) {
+            const std::vector<leg_path_constraints> repeated(intervals + 1, permissive);
+            require_pass(checker.check_linear_segment_with_sample_constraints(leg,
+                degrees(0, 12, -72), degrees(6, 20, -60), intervals, repeated), intervals + 1);
+        }
+        // 静止脚点具有独立已知高度；依次让每一个表项首先失败。
+        for (std::size_t index = 0; index < 5; ++index) {
+            for (const bool upper : {false, true}) {
+                std::vector<leg_path_constraints> bounds(5, {{{0, 0, 1}, 0}, 0.021, 0.021});
+                if (upper) {
+                    bounds[index].minimum_clearance_m = 0.0;
+                    bounds[index].maximum_clearance_m = std::nextafter(0.021, 0.0);
+                } else {
+                    bounds[index].minimum_clearance_m = std::nextafter(0.021, 1.0);
+                    bounds[index].maximum_clearance_m.reset();
+                }
+                const auto result = checker.check_linear_segment_with_sample_constraints(leg, zero, zero, 4, bounds);
+                require_failure(result, upper ? leg_path_check_status::foot_clearance_above_maximum
+                    : leg_path_check_status::foot_clearance_below_minimum, index, static_cast<double>(index) / 4.0);
+                near(*result.failed_clearance_m, 0.021, "each table index reports independent known height");
+            }
+        }
+        std::vector<leg_path_constraints> moving_planes;
+        for (std::size_t index = 0; index < 5; ++index) {
+            const double offset = 0.01 * static_cast<double>(index);
+            moving_planes.emplace_back(ground_plane_in_body{{0, 0, 1}, offset},
+                0.021 + offset, 0.021 + offset);
+        }
+        require_pass(checker.check_linear_segment_with_sample_constraints(leg, zero, zero, 4, moving_planes), 5);
+
+        // 下降段：前面的脚仍在空中，只有终点使用接触上界。
+        // q2 从 60° 到 0°，q3=0，独立高度为 (L2_of_pitch + L3)*sin(q2)。
+        const ground_plane_in_body ground{{0, 0, 1}, -0.021};
+        const foot_clearance_policy policy{0.00001, 0.00002, 0.00001};
+        std::vector<leg_path_constraints> landing;
+        for (std::size_t index = 0; index < 5; ++index) {
+            const double ratio = static_cast<double>(index) / 4.0;
+            const double ideal_height = (0.0742 + 0.11253)
+                * std::sin(degrees_to_radians(60.0 * (1.0 - ratio)));
+            const auto bounds = make_foot_clearance_bounds({leg_phase::swing, 0.8 + 0.2 * ratio}, ideal_height, policy);
+            landing.emplace_back(ground, bounds.minimum_clearance_m, bounds.maximum_clearance_m);
+        }
+        require_pass(checker.check_linear_segment_with_sample_constraints(leg,
+            degrees(0, 60, 0), zero, 4, landing), 5);
+        require_failure(checker.check_linear_segment(leg, degrees(0, 60, 0), zero, 4,
+            {ground, -0.00001, 0.00002}), leg_path_check_status::foot_clearance_above_maximum, 0, 0);
+        auto reversed = landing;
+        std::reverse(reversed.begin(), reversed.end());
+        require_failure(checker.check_linear_segment_with_sample_constraints(leg,
+            degrees(0, 60, 0), zero, 4, reversed), leg_path_check_status::foot_clearance_above_maximum, 0, 0);
+        near(landing.back().maximum_clearance_m.value(), 0.00002, "input table remains unchanged");
+    }
+    for (const auto joint : {&leg_joint_angles::yaw_rad, &leg_joint_angles::upper_leg_rad, &leg_joint_angles::lower_leg_rad}) {
+        auto outside = zero;
+        outside.*joint = degrees_to_radians(90.0);
+        const auto failure = checker.check_linear_segment_with_sample_constraints(leg_id::right_middle,
+            outside, zero, 2, std::vector<leg_path_constraints>(3, {{{0, 0, 1}, -1}, 0}));
+        require_failure(failure, leg_path_check_status::joint_limit_exceeded, 0, 0);
+        require(failure.failed_joint == (joint == &leg_joint_angles::yaw_rad ? joint_type::body_yaw
+            : joint == &leg_joint_angles::upper_leg_rad ? joint_type::upper_leg_pitch : joint_type::lower_leg_pitch),
+            "sampled entry retains joint-before-plane priority");
+    }
+}
+
+void test_invalid_sample_constraints(const robot_model& model) {
+    const leg_path_checker checker(model);
+    const leg_joint_angles zero{0, 0, 0};
+    for (const std::size_t size : {0U, 1U, 2U, 4U}) {
+        require_throws<std::invalid_argument>([&] {
+            (void)checker.check_linear_segment_with_sample_constraints(leg_id::right_middle,
+                zero, zero, 2, std::vector<leg_path_constraints>(size, permissive));
+        }, "table must contain all N+1 entries");
+    }
+    require_throws<std::invalid_argument>([&] {
+        (void)checker.check_linear_segment_with_sample_constraints(leg_id::right_middle, zero, zero, 0, {});
+    }, "sampled entry rejects zero intervals");
+    require_throws<std::length_error>([&] {
+        (void)checker.check_linear_segment_with_sample_constraints(leg_id::right_middle,
+            zero, zero, std::numeric_limits<std::size_t>::max(), {});
+    }, "sample count overflow precedes table length check");
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const std::vector<leg_path_constraints> invalid{
+        {{{nan, 0, 1}, 0}, 0}, {{{0, 0, 2}, 0}, 0}, {{{0, 0, 1}, nan}, 0},
+        {{{0, 0, 1}, 0}, nan}, {{{0, 0, 1}, 0}, 0, nan}, {{{0, 0, 1}, 0}, 0.002, 0.001}};
+    for (const auto& bad : invalid) {
+        // 第一个点必定距离失败，但末尾非法输入仍必须先抛异常。
+        const std::vector<leg_path_constraints> table{{{{0, 0, 1}, 0}, 1.0}, permissive, bad};
+        require_throws<std::invalid_argument>([&] {
+            (void)checker.check_linear_segment_with_sample_constraints(leg_id::right_middle, zero, zero, 2, table);
+        }, "entire constraint table checked before early path failure");
+    }
+    require_throws<std::out_of_range>([&] {
+        (void)checker.check_linear_segment_with_sample_constraints(static_cast<leg_id>(99),
+            zero, zero, 2, std::vector<leg_path_constraints>(3, permissive));
+    }, "sampled entry rejects unknown leg");
+    auto bad_angle = zero;
+    bad_angle.upper_leg_rad = nan;
+    require_throws<std::invalid_argument>([&] {
+        (void)checker.check_linear_segment_with_sample_constraints(leg_id::right_middle,
+            zero, bad_angle, 2, std::vector<leg_path_constraints>(3, permissive));
+    }, "sampled entry propagates invalid endpoint angle");
 }
 
 void test_errors(const robot_model& model, const json& root) {
@@ -229,6 +398,10 @@ void test_errors(const robot_model& model, const json& root) {
         }, "missing mapping or limits");
         require_pass(incomplete.check_linear_segment(leg_id::right_middle,
             angles, angles, 1, permissive), 2);
+        require_throws<std::logic_error>([&] {
+            (void)incomplete.check_linear_segment_with_sample_constraints(leg_id::left_rear,
+                angles, angles, 1, std::vector<leg_path_constraints>(2, permissive));
+        }, "sampled entry requires mapping and limits");
     }
     auto missing = root;
     missing["mounting"]["fixed_body_to_first_axis_transforms"]["left_rear"] = nullptr;
@@ -260,11 +433,14 @@ int main(int argc, char** argv) {
         const auto root = json::parse(input);
         const auto model = robot_model::from_file(argv[1]);
         test_clearance(model);
+        test_clearance_bands(model);
         test_joint_limits(model);
         test_invalid_constraints(model);
+        test_sample_constraints(model);
+        test_invalid_sample_constraints(model);
         test_errors(model, root);
         std::cout << "PASS: clearance boundaries, intermediate dip, tilted planes, "
-            "eighteen-axis limits, failure metadata and invalid input.\n";
+            "per-sample bands, landing descent, eighteen-axis limits, failure metadata and invalid input.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
