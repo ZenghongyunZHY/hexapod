@@ -9,7 +9,10 @@
 #include "hexapod_interfaces/msg/standing_reference.hpp"
 
 #include <rcl_interfaces/msg/parameter_descriptor.hpp>
-#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
+#include <rclcpp/logging.hpp>
+#include <rclcpp/node.hpp>
+#include <rclcpp/utilities.hpp>
 
 #include <algorithm>
 #include <array>
@@ -750,7 +753,11 @@ int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     int status = 0;
     try {
-        rclcpp::spin(std::make_shared<hexapod_control::planner_node>());
+        auto node = std::make_shared<hexapod_control::planner_node>();
+        rclcpp::executors::SingleThreadedExecutor executor;
+        executor.add_node(node);
+        executor.spin();
+        executor.remove_node(node);
     } catch (const std::exception& error) {
         RCLCPP_ERROR(rclcpp::get_logger("hexapod_planner"), "%s", error.what());
         status = 1;
