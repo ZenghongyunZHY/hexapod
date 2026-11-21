@@ -649,3 +649,11 @@ Pi 的核心测试和消息转换日志保存在 `build/sync-planner-20261120-RN
 Windows 核心 CTest 26/26、命令输入 C++ 正式用例和串口独立 CTest 3/3 通过。两个 ROS 节点通过 MSVC 与 Jazzy 消息类型的语法检查，Windows 本地编辑器数据库已登记新源码。Ubuntu WSL 使用临时隔离的 GCC 13.3 编译硬件源码，调度与预览工作线程测试通过，Linux 伪终端五项用例覆盖串口独占、定向补读、共用期限、异常回包和断线，并验证了完整工作线程的验收、发包、名义完成与参考失效。
 
 我请助手登记 `three_node_preview`。其中使用模拟站姿和软件控制板，覆盖输入归一化、指定周期完成、周期边界停止和收脚。两个已知 Pi SSH 地址均超时，源码尚未同步，三节点 Jazzy 运行联调与实机动作尚未验证。日志位于 `build/validation-cpp-control-nodes-20261121/`、`build/validation-command-receiver-cxx-20261121/` 和 `build/validation-cpp-runtime-20261121/`。
+
+## 2026-11-21：两个 C++ 节点同步到 Pi 与 GitHub
+
+我请助手把两个 C++ 节点和规划器入口的归一化改动上传到 Pi 与 GitHub。助手用已有 SSH 主机密钥确认 Pi 身份，按上轮基线比较双端 SHA-256，确认 Pi 无独立改动。本轮同步新增 22 个、修改 8 个文件，未删除文件。替换前的 Pi 文件已备份，两端 134 个共享文件复核一致。GitHub `main` 的源码提交为 `cf48621`。
+
+Pi 构建保持 `MAKEFLAGS=-j1`。GCC 的串口 ROS 节点编译触及内存监控下限。我请助手单独验证了核心库 26/26、串口 4/4（包含 Linux 虚拟串口）、命令输入和计划消息转换 2/2。串口节点随后使用工作区内单独解包并校验的 Ubuntu Clang 18 编译安装，命令接收节点的独立可执行目标也编译通过。助手用独立 Jazzy ROS 域和模拟规划端验证了串口节点的站姿确认、整批验收、完成和边界中止，以及命令节点的摇杆归一化、指定周期、停止和递增编号。
+
+完整规划器的 Clang 编译仍在可用内存跌破 64 MiB 时被监控停止，`three_node_preview` 尚未运行。本轮未修改系统软件包或交换空间，也未执行实机动作。Pi 构建和离线证据在 `build/sync-cpp-20261121-ZN0picM6/`，本地转录在 `build/deployment-20261121-cpp-runtime/`。
