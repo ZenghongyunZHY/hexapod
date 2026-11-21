@@ -165,6 +165,26 @@ def exercise(executable, hardware_config, child_log):
                                                  for s in statuses), "reference invalidated after fault")
                 if len(plans) != 2:
                     raise AssertionError("Planner reused an invalidated standing reference")
+
+                def teleop_rejection(sequence, x, y, yaw, expected_reason):
+                    command_pub.publish(MotionCommand(
+                        kind=MotionCommand.TELEOP,
+                        sequence=sequence,
+                        stamp=system_clock.now().to_msg(),
+                        vx_m_s=x,
+                        vy_m_s=y,
+                        wz_rad_s=yaw,
+                    ))
+                    wait_for(fake, rclpy, lambda: any(s.command_sequence == sequence
+                                                     and s.state == "rejected"
+                                                     and s.reason == expected_reason
+                                                     for s in statuses), expected_reason)
+
+                missing_reference = "a confirmed standing reference is required"
+                teleop_rejection(6, 1.0, 0.0, 1.0, missing_reference)
+                teleop_rejection(7, 0.6, 0.8, -0.5, missing_reference)
+                teleop_rejection(8, 1.0, 1.0, 0.0,
+                                 "TELEOP requires normalized planar and yaw inputs")
             finally:
                 if process.poll() is None:
                     process.terminate()

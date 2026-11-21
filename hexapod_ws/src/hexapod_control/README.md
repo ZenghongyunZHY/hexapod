@@ -2,6 +2,20 @@
 
 `hexapod_planner` 使用 `hexapod_core` 生成并检查起步、三脚行走、减速和收脚轨迹。命令接收节点提供用户意图，串口通信节点负责执行和回报。三个节点通过 `hexapod_interfaces` 定义的话题交换数据。
 
+## 命令接收节点
+
+`hexapod_command` 将 `joy`（`sensor_msgs/msg/Joy`）和 `command_request`（`MotionCommand`）统一转发到 `motion_command`。用机器人系统时钟给摇杆样本打戳，并在设备在线时周期性发布当前轴值。按手柄配置 `axis_indices`、`axis_minimums`、`axis_centers`、`axis_maximums`、`axis_directions`、`joystick_deadzone` 和 `stop_button`。三个轴参数依次对应前进、左移和偏航。接收端给输出统一编号，规划器在 `planner_status` 发布任务状态。
+
+```bash
+ros2 run hexapod_control hexapod_command
+ros2 topic pub --once /command_request hexapod_interfaces/msg/MotionCommand \
+  '{kind: 2, vx_m_s: 0.0005, cycle_count: 1}'
+ros2 topic pub --once /command_request hexapod_interfaces/msg/MotionCommand '{kind: 3}'
+ros2 topic echo /planner_status
+```
+
+上例的指定周期和停止是离散请求，缺省时间戳时由接收节点在收取时填写。通过 `command_request` 注入 `TELEOP` 时使用实际采样时间。手柄在收到停止、遥控超期或指定周期任务结束后先回中，再开启下一次遥控。
+
 ```text
 命令接收节点 ── motion_command ──→ 规划器节点 ── servo_plan ──→ 串口通信节点
                                      │      ←─ execution_status ─┘
@@ -48,12 +62,14 @@ colcon test-result --verbose
 
 | 话题 | 方向 | 类型 | 含义 |
 | --- | --- | --- | --- |
-| `motion_command` | 输入 | `MotionCommand` | 接收节点发送 `TELEOP`、`WALK_CYCLES` 或 `STOP`。单一发布者使用严格递增的 `sequence` 及按顺序产生的机器人系统时间戳。规划器继续运行时，发布者重启后需要延续编号。速度用 m/s 和 rad/s。 |
+| `motion_command` | 输入 | `MotionCommand` | 接收节点发送 `TELEOP`、`WALK_CYCLES` 或 `STOP`。单一发布者使用严格递增的 `sequence` 及按顺序产生的机器人系统时间戳。规划器继续运行时，发布者重启后需要延续编号。 |
 | `standing_reference` | 输入 | `StandingReference` | 经确认的当前站姿，带时间戳和按物理 ID 排列的 18 个位置。 |
 | `execution_status` | 输入 | `ExecutionStatus` | 串口执行端按 `plan_id` 报告验收、完成、拒绝、失败或中止。 |
 | `servo_plan` | 输出 | `ServoPlan` | 执行批次，包含 `plan_id`、期望动作起点、起始参考位置及各段的相对起点、动作时长和 18 个段终点目标。 |
 | `plan_stop` | 输出 | `PlanStop` | 请求执行端让指定计划在下一个可停止边界停下。 |
 | `planner_status` | 输出 | `PlannerStatus` | 通过 `command_sequence` 和 `plan_id` 关联规划状态和失败原因。 |
+
+对于 `TELEOP`，现有的 `vx_m_s`、`vy_m_s` 和 `wz_rad_s` 字段承载无量纲系数。平移两轴组成的向量模长不超过 1，偏航系数在 `[-1, 1]`。规划器分别乘 `max_linear_speed_m_s` 和 `max_yaw_speed_rad_s`，将样本换算为实际目标速度后入队。比如默认上限下，遥控样本 `(0.6, 0.8, -0.5)` 换算为 `(0.003 m/s, 0.004 m/s, -0.015 rad/s)`。对于 `WALK_CYCLES`，仍按 m/s 和 rad/s 填写并校验任务速度。`STOP` 忽略速度和周期数字段。
 
 遥控输入按 FIFO 处理并用样本时刻更新目标速度。手柄回中持续发送有效零速，暂时缺包时沿用有效期内的意图，回中达到持续时间或输入超期时进入减速与收脚。固定周期请求中的 `cycle_count` 只计完整行走周期，起步和减速用的行走周期也计入。首版速度在完整周期边界以阶梯形式改变。规划器在发布前检查完整轨迹，原地收脚使用当前机身位置与站姿脚点。运动学检查记录的是模型中的足端、关节限位和路径状态。
 

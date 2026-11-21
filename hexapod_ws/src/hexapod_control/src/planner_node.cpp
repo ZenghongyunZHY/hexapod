@@ -69,6 +69,7 @@ struct pending_plan {
 };
 
 struct queued_command {
+    // 入队后的速度字段已换算为 m/s 和 rad/s。
     MotionCommand message;
     monotonic_time sampled;
     monotonic_time expires;
@@ -76,6 +77,19 @@ struct queued_command {
 
 double linear_speed(const planar_body_velocity& velocity) {
     return std::hypot(velocity.vx_m_s, velocity.vy_m_s);
+}
+
+planar_body_velocity teleop_velocity(const MotionCommand& message, double max_linear_speed, double max_yaw_speed) {
+    const double x = message.vx_m_s;
+    const double y = message.vy_m_s;
+    const double yaw = message.wz_rad_s;
+    const double linear = std::hypot(x, y);
+    constexpr double roundoff = 4.0 * std::numeric_limits<double>::epsilon();
+    if (!std::isfinite(linear) || linear > 1.0 + roundoff || !std::isfinite(yaw) || std::abs(yaw) > 1.0) {
+        throw std::invalid_argument("TELEOP requires normalized planar and yaw inputs");
+    }
+    const double scale = std::max(1.0, linear);
+    return {(x / scale) * max_linear_speed, (y / scale) * max_linear_speed, yaw * max_yaw_speed};
 }
 
 bool stopped(const planar_body_velocity& velocity) {
@@ -335,15 +349,21 @@ class planner_node final : public rclcpp::Node {
             if (message.kind != MotionCommand::TELEOP && message.kind != MotionCommand::WALK_CYCLES && message.kind != MotionCommand::STOP) {
                 throw std::invalid_argument("unknown motion command kind");
             }
-            if (message.kind != MotionCommand::STOP) {
+            auto command = message;
+            if (message.kind == MotionCommand::TELEOP) {
+                const auto velocity = teleop_velocity(message, max_linear_speed_, max_yaw_speed_);
+                command.vx_m_s = velocity.vx_m_s;
+                command.vy_m_s = velocity.vy_m_s;
+                command.wz_rad_s = velocity.wz_rad_s;
+            } else if (message.kind == MotionCommand::WALK_CYCLES) {
                 const planar_body_velocity velocity{message.vx_m_s, message.vy_m_s, message.wz_rad_s};
                 if (!std::isfinite(linear_speed(velocity)) || !std::isfinite(velocity.wz_rad_s) ||
                     linear_speed(velocity) > max_linear_speed_ || std::abs(velocity.wz_rad_s) > max_yaw_speed_) {
                     throw std::invalid_argument("motion command exceeds configured velocity limits");
                 }
-            }
-            if (message.kind == MotionCommand::WALK_CYCLES && (message.cycle_count == 0 || message.cycle_count > max_cycles_)) {
-                throw std::invalid_argument("invalid requested cycle count");
+                if (message.cycle_count == 0 || message.cycle_count > max_cycles_) {
+                    throw std::invalid_argument("invalid requested cycle count");
+                }
             }
             if (commands_.size() == 256) {
                 if (message.kind != MotionCommand::STOP) {
@@ -352,7 +372,7 @@ class planner_node final : public rclcpp::Node {
                 commands_.clear();
             }
             const auto sampled = received - age;
-            commands_.push_back({message, sampled, sampled + command_timeout_});
+            commands_.push_back({std::move(command), sampled, sampled + command_timeout_});
             last_sequence_ = message.sequence;
             last_source_stamp_ = source_stamp;
         } catch (const std::exception& error) {

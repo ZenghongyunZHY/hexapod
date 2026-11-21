@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hexapod_hardware</name>
+  <version>0.1.0</version>
+  <description>Hexapod timed servo execution and serial communication.</description>
+  <maintainer email="hexapod@example.invalid">hexapod</maintainer>
+  <license>UNLICENSED</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>hexapod_core</depend>
+  <depend>hexapod_interfaces</depend>
+  <depend>nlohmann_json</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <test_depend>python3</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

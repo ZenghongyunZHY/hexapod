@@ -7,6 +7,8 @@ uint8 kind
 uint64 sequence
 # 机器人系统时钟下的命令时刻。
 builtin_interfaces/Time stamp
+# TELEOP 使用无量纲系数，平移向量模长不超过 1，偏航系数在 [-1, 1]。
+# WALK_CYCLES 使用字段名标注的 m/s 和 rad/s。STOP 忽略这三个字段。
 float64 vx_m_s
 float64 vy_m_s
 float64 wz_rad_s

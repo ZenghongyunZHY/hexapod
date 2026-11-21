@@ -2,7 +2,7 @@
 <package format="3">
   <name>hexapod_control</name>
   <version>0.1.0</version>
-  <description>Hexapod motion planning node.</description>
+  <description>Hexapod command receiver and motion planning nodes.</description>
   <maintainer email="hexapod@example.invalid">hexapod</maintainer>
   <license>MIT</license>
 
@@ -11,6 +11,7 @@
   <depend>hexapod_interfaces</depend>
   <depend>rcl_interfaces</depend>
   <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
   <test_depend>python3</test_depend>
   <test_depend>rclpy</test_depend>
   <export><build_type>ament_cmake</build_type></export>
