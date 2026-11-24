@@ -47,10 +47,16 @@ if(BUILD_TESTING)
   add_executable(command_input_tests test/command_input_tests.cpp)
   target_link_libraries(command_input_tests PRIVATE command_input)
   add_test(NAME command_input_tests COMMAND command_input_tests)
+  add_test(NAME command_receiver_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/command_receiver_smoke.py"
+      "$<TARGET_FILE:hexapod_command>")
   add_test(NAME planner_node_smoke
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/planner_node_smoke.py"
       "$<TARGET_FILE:hexapod_planner>" "${CMAKE_CURRENT_SOURCE_DIR}/../../config/robot_hardware.json")
-  set_tests_properties(planner_node_smoke PROPERTIES TIMEOUT 45)
+  add_test(NAME planner_gait_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/planner_gait_smoke.py"
+      "$<TARGET_FILE:hexapod_planner>" "${CMAKE_CURRENT_SOURCE_DIR}/../../config/robot_hardware.json")
+  set_tests_properties(command_receiver_smoke planner_node_smoke planner_gait_smoke PROPERTIES TIMEOUT 45)
 endif()
 
 install(TARGETS hexapod_planner hexapod_command DESTINATION lib/${PROJECT_NAME})

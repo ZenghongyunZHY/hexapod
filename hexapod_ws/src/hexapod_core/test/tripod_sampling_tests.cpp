@@ -49,6 +49,34 @@ void test_known_timeline() {
         "no next cycle starts at final row");
 }
 
+void test_different_stage_counts() {
+    const tripod_timing_request timing{14.4, 0.625};
+    const auto boundaries = make_tripod_cycle_boundaries(timing);
+    const auto samples = make_tripod_cycle_samples(timing, 2, 10);
+    const std::array<std::size_t, 5> boundary_rows{0, 2, 12, 14, 24};
+    require(samples.size() == 25, "double support and swing each use their own interval count");
+    for (std::size_t stage = 0; stage + 1 < boundary_rows.size(); ++stage) {
+        const auto start = boundary_rows[stage];
+        const auto end = boundary_rows[stage + 1];
+        require(samples[start].boundary.has_value(), "phase boundary retains its event");
+        boundary_equal(*samples[start].boundary, boundaries[stage]);
+        const double segment_time_s = stage % 2 == 0 ? 0.9 : 0.54;
+        for (std::size_t index = start + 1; index <= end; ++index) {
+            require(std::abs(samples[index].time_s - samples[index - 1].time_s - segment_time_s) < 1e-12,
+                "double support and swing use 900 ms and 540 ms segments");
+            require(samples[index].boundary.has_value() == (index == end), "only exact stage endpoints have events");
+        }
+    }
+    boundary_equal(*samples.back().boundary, boundaries.back());
+
+    const auto half = make_tripod_cycle_samples({14.4, 0.5}, 2, 10);
+    require(half.size() == 21 && half.front().boundary && half[10].time_s == 7.2 && half[10].boundary,
+        "half duty uses ten segments for both swing stages");
+    require(half.front().boundary->begin_swing[1]
+        && half[10].boundary->finish_swing[1] && half[10].boundary->begin_swing[0],
+        "half duty retains lift-off at time zero and the simultaneous handoff");
+}
+
 void test_invariants() {
     for (const double duty : {0.5, 0.625, 0.7, 0.875}) {
         for (const double period : {0.125, 4.0, 7.3, 1e-100, 1e100}) {
@@ -103,6 +131,8 @@ void test_invariants() {
 
 void test_bad_inputs_and_precision() {
     require_throws<std::invalid_argument>([] { (void)make_tripod_cycle_samples({4.0, 0.625}, 0); }, "zero intervals");
+    require_throws<std::invalid_argument>([] { (void)make_tripod_cycle_samples({4.0, 0.625}, 0, 2); }, "zero double-support intervals");
+    require_throws<std::invalid_argument>([] { (void)make_tripod_cycle_samples({4.0, 0.625}, 2, 0); }, "zero swing intervals");
     for (const double period : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         require_throws<std::invalid_argument>([&] { (void)make_tripod_cycle_samples({period, 0.625}, 2); }, "invalid period delegated");
     }
@@ -112,6 +142,9 @@ void test_bad_inputs_and_precision() {
     require_throws<std::length_error>([] {
         (void)make_tripod_cycle_samples({4.0, 0.625}, std::numeric_limits<std::size_t>::max());
     }, "overflow rejected before allocation");
+    require_throws<std::length_error>([] {
+        (void)make_tripod_cycle_samples({4.0, 0.625}, 2, std::numeric_limits<std::size_t>::max());
+    }, "asymmetric interval count overflow rejected before allocation");
     const double narrow = std::nextafter(0.5, 1.0);
     const auto boundaries_only = make_tripod_cycle_samples({4.0, narrow}, 1);
     require(boundaries_only.size() == 5, "distinct narrow boundaries retained");
@@ -128,6 +161,7 @@ void test_bad_inputs_and_precision() {
 int main() {
     try {
         test_known_timeline();
+        test_different_stage_counts();
         test_invariants();
         test_bad_inputs_and_precision();
         std::cout << "PASS: exact cycle samples, unique event preservation, count/order, half-duty events, input rejection and floating resolution.\n";

@@ -32,13 +32,14 @@ public:
     servo_controller& operator=(const servo_controller&) = delete;
 
     void check_link();
-    // Returns when the kernel has accepted the complete packet. Physical wire time follows.
-    void send_move(const servo_positions& positions, std::uint16_t duration_ms, monotonic_time deadline);
+    // Returns the monotonic time observed after the kernel accepted the complete packet.
+    // Physical wire time follows.
+    monotonic_time send_move(const servo_positions& positions, std::uint16_t duration_ms, monotonic_time deadline);
     servo_positions positions(monotonic_time deadline);
     std::uint16_t voltage_mv(monotonic_time deadline);
 
 private:
-    void send(const std::uint8_t* bytes, std::size_t size, monotonic_time deadline);
+    monotonic_time send(const std::uint8_t* bytes, std::size_t size, monotonic_time deadline);
     std::vector<std::uint8_t> query(const std::vector<std::uint8_t>& request, std::uint8_t command, monotonic_time deadline);
 
     int fd_ = -1;

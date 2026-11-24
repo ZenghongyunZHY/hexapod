@@ -4,6 +4,7 @@
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "diagnostic_msgs/msg/key_value.hpp"
 #include "hexapod_core/joint_mapper.hpp"
+#include "hexapod_core/leg_kinematics.hpp"
 #include "hexapod_interfaces/msg/execution_status.hpp"
 #include "hexapod_interfaces/msg/plan_stop.hpp"
 #include "hexapod_interfaces/msg/servo_plan.hpp"
@@ -15,12 +16,16 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -42,6 +47,14 @@ using std_srvs::srv::Trigger;
 using namespace std::chrono_literals;
 
 constexpr auto time_units_per_second = 1'000'000'000;
+constexpr double standing_tolerance_m = 0.010;
+
+std::optional<std::chrono::nanoseconds> read_stamp(const builtin_interfaces::msg::Time& stamp) {
+  if (stamp.sec < 0 || stamp.nanosec >= time_units_per_second) {
+    return std::nullopt;
+  }
+  return std::chrono::seconds(stamp.sec) + std::chrono::nanoseconds(stamp.nanosec);
+}
 
 builtin_interfaces::msg::Time wire_stamp(std::chrono::nanoseconds since_epoch) {
   const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(since_epoch);
@@ -77,26 +90,36 @@ class serial_node final : public rclcpp::Node {
   serial_node()
       : Node("hexapod_serial"), hardware_config_(parameter<std::string>("hardware_config", "")),
         mode_name_(parameter<std::string>("mode", "preview")), device_(parameter<std::string>("serial_port", "")),
-        model_(hexapod_core::robot_model::from_file(hardware_config_)), mapper_(model_) {
+        model_(hexapod_core::robot_model::from_file(hardware_config_)), mapper_(model_), kinematics_(model_) {
     const auto mode = load_mode(mode_name_);
     if (mode != serial_mode::preview && device_.empty()) {
       throw std::invalid_argument("serial_port must be supplied for probe or execute mode");
     }
-    const auto preview = load_preview_positions(parameter("preview_positions", std::vector<std::int64_t>{}));
+    const auto preview = load_positions("preview_positions");
+    const auto standing = mode == serial_mode::execute ? load_positions("standing_positions") : std::nullopt;
     const auto wire_time = mode == serial_mode::preview ? 0ns : move_wire_time;
     const execution_options options{milliseconds_parameter("send_advance_ms", 90, 1, 5000), wire_time,
-        milliseconds_parameter("completion_margin_ms", 5, 0, 1000)};
+        milliseconds_parameter("completion_margin_ms", 5, 0, 1000),
+        milliseconds_parameter("frame_lateness_ms", 25, 0, 1000),
+        milliseconds_parameter("write_timeout_ms", 25, 1, 1000)};
     const auto qos = rclcpp::QoS(rclcpp::KeepLast(256)).reliable().durability_volatile();
     status_pub_ = create_publisher<ExecutionStatus>("execution_status", qos);
-    reference_pub_ = create_publisher<StandingReference>("standing_reference", qos);
+    const auto reference_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+    reference_pub_ = create_publisher<StandingReference>("standing_reference", reference_qos);
     joint_pub_ = create_publisher<JointState>("joint_states", 10);
     diagnostic_pub_ = create_publisher<DiagnosticArray>("diagnostics", 10);
     plan_sub_ = create_subscription<ServoPlan>("servo_plan", qos, [this](ServoPlan::ConstSharedPtr message) { receive_plan(*message); });
     stop_sub_ = create_subscription<PlanStop>("plan_stop", qos, [this](PlanStop::ConstSharedPtr message) { runtime_->request_stop(message->plan_id); });
-    confirm_service_ = create_service<Trigger>("confirm_standing", [this](std::shared_ptr<rmw_request_id_t> request_id,
-          std::shared_ptr<Trigger::Request>) { request_confirmation(std::move(request_id)); });
-    runtime_ = std::make_unique<serial_runtime>(serial_settings{mode, device_, hardware_config_, preview, options},
-        [this](const servo_positions& positions) { validate_positions(positions); });
+    runtime_ = std::make_unique<serial_runtime>(serial_settings{mode, device_, hardware_config_, preview, options, standing},
+        [this](const servo_positions& positions) { validate_positions(positions); },
+        [this](const servo_positions& measured, const servo_positions& nominal) { verify_standing(measured, nominal); });
+    if (mode == serial_mode::preview) {
+      confirm_service_ = create_service<Trigger>("confirm_standing", [this](std::shared_ptr<rmw_request_id_t> request_id,
+            std::shared_ptr<Trigger::Request>) { request_standing(confirm_service_, std::move(request_id), false); });
+    } else if (mode == serial_mode::execute) {
+      transition_service_ = create_service<Trigger>("transition_to_standing", [this](std::shared_ptr<rmw_request_id_t> request_id,
+            std::shared_ptr<Trigger::Request>) { request_standing(transition_service_, std::move(request_id), true); });
+    }
     event_timer_ = create_wall_timer(5ms, [this] { publish_events(); });
     RCLCPP_INFO(get_logger(), "Serial node started in %s mode", mode_name_.c_str());
   }
@@ -117,15 +140,16 @@ class serial_node final : public rclcpp::Node {
     return std::chrono::milliseconds(ms);
   }
 
-  std::optional<servo_positions> load_preview_positions(const std::vector<std::int64_t>& values) const {
+  std::optional<servo_positions> load_positions(const char* name) {
+    const auto values = parameter(name, std::vector<std::int64_t>{});
     if (values.empty()) return std::nullopt;
     servo_positions positions{};
     if (values.size() != positions.size()) {
-      throw std::invalid_argument("preview_positions requires 18 positions ordered by physical ID");
+      throw std::invalid_argument(std::string(name) + " requires 18 positions ordered by physical ID");
     }
     for (std::size_t i = 0; i != values.size(); ++i) {
       if (values[i] < 0 || values[i] > 1000) {
-        throw std::invalid_argument("preview_positions contains a non-native position");
+        throw std::invalid_argument(std::string(name) + " contains a non-native position");
       }
       positions[i] = static_cast<std::uint16_t>(values[i]);
     }
@@ -144,28 +168,71 @@ class serial_node final : public rclcpp::Node {
     }
   }
 
+  hexapod_core::vector3 foot_at(hexapod_core::leg_id leg, const servo_positions& positions) const {
+    std::array<double, hexapod_core::joints_per_leg> angles{};
+    for (const auto axis : hexapod_core::joint_order) {
+      const auto id = model_.joint(leg, axis).binding.id;
+      angles[hexapod_core::joint_index(axis)] = mapper_.servo_position_to_joint_angle_rad(
+          id, hexapod_core::servo_position(positions[id.index()]));
+    }
+    return kinematics_.forward_in_body_frame(leg, {angles[0], angles[1], angles[2]});
+  }
+
+  void verify_standing(const servo_positions& measured, const servo_positions& nominal) const {
+    validate_positions(measured);
+    constexpr std::array<const char*, hexapod_core::leg_count> names{
+        "right front", "right middle", "right rear", "left front", "left middle", "left rear"};
+    for (const auto leg : hexapod_core::leg_order) {
+      const auto actual = foot_at(leg, measured);
+      const auto expected = foot_at(leg, nominal);
+      const auto xy = std::hypot(actual.x - expected.x, actual.y - expected.y);
+      const auto z = std::abs(actual.z - expected.z);
+      if (xy > standing_tolerance_m || z > standing_tolerance_m) {
+        std::ostringstream reason;
+        reason << std::fixed << std::setprecision(1) << "Standing verification failed for "
+               << names[hexapod_core::leg_index(leg)] << ": XY " << xy * 1000.0 << " mm, Z "
+               << z * 1000.0 << " mm, limit 10.0 mm each";
+        throw std::invalid_argument(reason.str());
+      }
+    }
+  }
+
   void receive_plan(const ServoPlan& message) {
     timed_plan plan{message.plan_id, 0ns, message.initial_positions, {}};
-    if (message.motion_start.sec >= 0 && message.motion_start.nanosec < time_units_per_second) {
-      plan.motion_start = std::chrono::seconds(message.motion_start.sec) + std::chrono::nanoseconds(message.motion_start.nanosec);
+    if (const auto start = read_stamp(message.motion_start)) {
+      plan.motion_start = *start;
       plan.segments.reserve(message.segments.size());
       for (const auto& segment : message.segments) {
         plan.segments.push_back({segment.start_offset_ms, segment.move_duration_ms, segment.positions, segment.walking_cycle_end});
       }
     }
-    runtime_->submit(std::move(plan));
+    runtime_->submit(std::move(plan), read_stamp(message.standing_stamp));
   }
 
-  void request_confirmation(std::shared_ptr<rmw_request_id_t> request_id) {
-    if (pending_confirmation_ || reference_pub_->get_subscription_count() == 0) {
+  void request_standing(const rclcpp::Service<Trigger>::SharedPtr& service, std::shared_ptr<rmw_request_id_t> request_id,
+                        bool transition) {
+    if (pending_confirmation_) {
       Trigger::Response response;
       response.success = false;
-      response.message = pending_confirmation_ ? "A standing confirmation is already pending" : "No subscriber for standing_reference";
-      confirm_service_->send_response(*request_id, response);
+      response.message = "A standing operation is already in progress";
+      service->send_response(*request_id, response);
       return;
     }
+    if (transition) {
+      const auto stamp = runtime_->request_standing_transition();
+      if (!stamp) {
+        Trigger::Response response;
+        response.success = false;
+        response.message = "Standing transition is unavailable";
+        service->send_response(*request_id, response);
+        return;
+      }
+      publish_reference(false, *stamp);
+    } else {
+      runtime_->request_confirmation();
+    }
     pending_confirmation_ = std::move(request_id);
-    runtime_->request_confirmation();
+    pending_service_ = service;
   }
 
   void publish(const execution_report& report) {
@@ -173,23 +240,37 @@ class serial_node final : public rclcpp::Node {
     message.plan_id = report.id;
     message.state = wire_state(report.state);
     message.completed_segments = report.completed_segments;
+    message.maximum_finish_delay_ms = report.maximum_finish_delay_ms;
     message.reason = report.reason;
     status_pub_->publish(message);
   }
 
+  void publish_reference(bool ready, std::chrono::nanoseconds stamp) {
+    if (stamp <= last_reference_stamp_) {
+      return;
+    }
+    StandingReference message;
+    message.stamp = wire_stamp(stamp);
+    message.ready = ready;
+    reference_pub_->publish(message);
+    last_reference_stamp_ = stamp;
+  }
+
+  void publish(const standing_invalidation& event) {
+    publish_reference(false, event.stamp);
+  }
+
   void publish(const standing_confirmation& result) {
-    if (result.reference) {
-      StandingReference message;
-      message.stamp = wire_stamp(result.reference->received_at);
-      message.positions = result.reference->positions;
-      reference_pub_->publish(message);
+    if (result.ready_stamp) {
+      publish_reference(true, *result.ready_stamp);
     }
     if (pending_confirmation_) {
       Trigger::Response response;
-      response.success = result.reference.has_value();
+      response.success = result.ready_stamp.has_value();
       response.message = result.reason;
-      confirm_service_->send_response(*pending_confirmation_, response);
+      pending_service_->send_response(*pending_confirmation_, response);
       pending_confirmation_.reset();
+      pending_service_.reset();
     }
   }
 
@@ -246,6 +327,7 @@ class serial_node final : public rclcpp::Node {
   const std::string device_;
   const hexapod_core::robot_model model_;
   const hexapod_core::joint_mapper mapper_;
+  const hexapod_core::leg_kinematics kinematics_;
   rclcpp::Publisher<ExecutionStatus>::SharedPtr status_pub_;
   rclcpp::Publisher<StandingReference>::SharedPtr reference_pub_;
   rclcpp::Publisher<JointState>::SharedPtr joint_pub_;
@@ -253,6 +335,9 @@ class serial_node final : public rclcpp::Node {
   rclcpp::Subscription<ServoPlan>::SharedPtr plan_sub_;
   rclcpp::Subscription<PlanStop>::SharedPtr stop_sub_;
   rclcpp::Service<Trigger>::SharedPtr confirm_service_;
+  rclcpp::Service<Trigger>::SharedPtr transition_service_;
+  rclcpp::Service<Trigger>::SharedPtr pending_service_;
+  std::chrono::nanoseconds last_reference_stamp_{};
   std::shared_ptr<rmw_request_id_t> pending_confirmation_;
   std::unique_ptr<serial_runtime> runtime_;
   rclcpp::TimerBase::SharedPtr event_timer_;

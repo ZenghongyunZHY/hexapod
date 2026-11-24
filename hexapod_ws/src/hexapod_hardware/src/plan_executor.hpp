@@ -33,12 +33,16 @@ struct execution_report {
   execution_state state;
   std::uint32_t completed_segments;
   std::string reason;
+  // Conservative delay beyond the nominal end, populated only on admission.
+  std::uint64_t maximum_finish_delay_ms = 0;
 };
 
 struct execution_options {
   std::chrono::milliseconds send_advance{90};
   std::chrono::nanoseconds wire_time{move_wire_time};
   std::chrono::milliseconds completion_margin{5};
+  std::chrono::milliseconds frame_lateness{25};
+  std::chrono::milliseconds write_timeout{25};
 };
 
 struct frame_dispatch {
@@ -66,21 +70,27 @@ class plan_executor {
 
   std::optional<execution_report> advance(monotonic_time now);
   std::optional<frame_dispatch> due(monotonic_time now) const;
-  void mark_sent(const frame_dispatch& frame);
-  std::optional<monotonic_time> next_wakeup() const;
+  void mark_sent(const frame_dispatch& frame, monotonic_time written_at);
+  std::optional<monotonic_time> next_wakeup(monotonic_time earliest_dispatch = {}) const;
 
  private:
   struct accepted_plan {
     timed_plan plan;
-    monotonic_time start;
+    monotonic_time nominal_start;
     std::size_t send_through;
+    std::uint64_t maximum_finish_delay_ms;
     std::size_t sent = 0;
     std::size_t completed = 0;
+    // Absent only until the first write of an idle-start plan.
+    std::optional<monotonic_time> next_write{};
+    std::deque<monotonic_time> completions{};
   };
 
   void validate(const timed_plan& plan) const;
   static std::chrono::milliseconds segment_end(const timed_segment& segment);
-  void update_completed(accepted_plan& plan, monotonic_time now) const;
+  std::uint64_t finish_delay_ms(std::size_t count, const accepted_plan* predecessor) const;
+  monotonic_time scheduled_write(const accepted_plan& plan) const;
+  static void update_completed(accepted_plan& plan, monotonic_time now);
 
   execution_options options_;
   position_validator validate_positions_;

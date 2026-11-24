@@ -42,4 +42,10 @@ struct tripod_cycle_sample {
 // 周期配置的异常由边界生成函数继续抛出。
 std::vector<tripod_cycle_sample> make_tripod_cycle_samples(const tripod_timing_request& request, std::size_t intervals_per_stage);
 
+// 分别设置双支撑与摆动阶段的分段数，两个值均须大于 0。
+std::vector<tripod_cycle_sample> make_tripod_cycle_samples(
+    const tripod_timing_request& request,
+    std::size_t double_support_intervals,
+    std::size_t swing_intervals);
+
 }  // namespace hexapod_core

@@ -32,10 +32,10 @@
     "reference_position": 500,
     "reference_position_meaning": "用户于 2026-10-18 确认：500 为水平伸直展开零位，18 个关节角均为 0；不是站立姿态",
     "user_configured_position_limits": [
-      140,
-      860
+      0,
+      1000
     ],
-    "user_configured_position_limits_source": "用户于 2026-10-18 确认：已将 140～860 写入全部舵机，调试阶段确认各轴可达；不改变协议原生 0～1000"
+    "user_configured_position_limits_source": "用户于 2026-11-24 报告已将舵机固件限幅开放至 0～1000。2026-10-18 曾确认安装状态下各轴单独可达 140～860。"
   },
   "joint_order": [
     "body_yaw",
@@ -164,7 +164,7 @@
         "max_deg": 86.4
       },
       "3": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       },
       "4": {
@@ -176,7 +176,7 @@
         "max_deg": 86.4
       },
       "6": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       },
       "7": {
@@ -188,7 +188,7 @@
         "max_deg": 86.4
       },
       "9": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       },
       "10": {
@@ -200,7 +200,7 @@
         "max_deg": 86.4
       },
       "12": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       },
       "13": {
@@ -212,7 +212,7 @@
         "max_deg": 86.4
       },
       "15": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       },
       "16": {
@@ -224,7 +224,7 @@
         "max_deg": 86.4
       },
       "18": {
-        "min_deg": -86.4,
+        "min_deg": -96.0,
         "max_deg": 86.4
       }
     },
@@ -501,7 +501,7 @@
       "leg_roots_and_transforms": "CAD 装配变换及输出轴中心推导；坐标按已说明结果保留到 0.01 mm，安装角取 45/0/-45/135/180/-135 度；非实测",
       "joint_angle_signs": "CAD 主输出端方向结合用户已确认的位置增大转向，按本次数学正轴逐轴推导；偏航全部 +1，右俯仰 +1、左俯仰 -1",
       "joint_reference_angles_deg": "用户于 2026-10-18 确认位置 500 对应关节角 0；2026-10-19 将表名统一为 joint_reference_angles_deg，含义和数值不变",
-      "installed_joint_limits": "用户确认的 140～860，通过 (p-500)×0.24° 换算为每轴 [-86.4°,86.4°]"
+      "installed_joint_limits": "V1 软件命令范围。各轴沿用 140～860 对应的 ±86.4°，六个膝关节的负向下限按 140 mm 路线的离线规划需求扩至 -96°。新增区间的装配干涉和带载行走尚待实测。"
     }
   },
   "model_geometry": {

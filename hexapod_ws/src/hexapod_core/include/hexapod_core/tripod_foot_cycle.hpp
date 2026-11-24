@@ -5,10 +5,20 @@
 #include "hexapod_core/swing_landing.hpp"
 #include "hexapod_core/tripod_sampling.hpp"
 
+#include <array>
+#include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
 namespace hexapod_core {
+
+struct tripod_walking_profile {
+    std::size_t double_support_intervals;
+    std::size_t swing_intervals;
+    // 摆动中点相对原曲线的水平外移，单位 m。
+    double outward_offset_m;
+};
 
 // 一个完整周期的脚点几何规划输入。
 struct tripod_foot_cycle_request {
@@ -27,9 +37,11 @@ struct tripod_foot_cycle_request {
     // 规划参考系中的水平地面高度。
     double ground_height_m;
 
-    // 本周期统一使用的额外抬升量，必须有限且不小于 0。
-    // 抬升方向固定为规划参考系 +Z。
+    // 本周期统一使用的额外竖直抬升量，必须有限且不小于 0。
     double lift_height_m;
+
+    // 省略时使用均匀分段与竖直抬升。
+    std::optional<tripod_walking_profile> walking_profile;
 
     tripod_foot_cycle_request(
         const tripod_timing_request& timing_request,
@@ -39,7 +51,8 @@ struct tripod_foot_cycle_request {
         const gait_foot_state& feet,
         const std::array<stance_midpoint_reference, leg_count>& references,
         double ground_height,
-        double lift_height
+        double lift_height,
+        std::optional<tripod_walking_profile> profile = std::nullopt
     )
         : timing(timing_request),
           intervals_per_stage(intervals),
@@ -48,7 +61,8 @@ struct tripod_foot_cycle_request {
           initial_feet(feet),
           midpoint_references_in_body(references),
           ground_height_m(ground_height),
-          lift_height_m(lift_height) {
+          lift_height_m(lift_height),
+          walking_profile(profile) {
     }
 };
 
@@ -110,5 +124,10 @@ struct tripod_foot_cycle {
 // final_feet/final_pose 也是候选状态，
 // 上层接受整条关节规划后才能保存。
 tripod_foot_cycle plan_tripod_foot_cycle(const tripod_foot_cycle_request& request);
+
+// 水平外移需要六条腿偏航根部在机身坐标系中的位置，按 leg_order 排列。
+tripod_foot_cycle plan_tripod_foot_cycle(
+    const tripod_foot_cycle_request& request,
+    const std::array<vector3, leg_count>& yaw_roots_in_body);
 
 }  // namespace hexapod_core

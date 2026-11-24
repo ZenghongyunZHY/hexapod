@@ -50,6 +50,7 @@ struct tripod_sequence_schedule_request {
     double initial_foot_tolerance_m;
     double continuation_foot_tolerance_m;
     std::optional<foot_clearance_policy> clearance_policy{};
+    std::optional<tripod_walking_profile> walking_profile{};
 };
 
 enum class tripod_sequence_status {

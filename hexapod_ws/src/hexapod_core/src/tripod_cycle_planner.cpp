@@ -59,6 +59,19 @@ void require_cycle_request(const tripod_cycle_request& request) {
     }
 }
 
+tripod_foot_cycle plan_foot_cycle(const tripod_foot_cycle_request& request, const leg_kinematics& kinematics) {
+    const auto& profile = request.walking_profile;
+    if (!profile || !std::isfinite(profile->outward_offset_m) || profile->outward_offset_m <= 0.0) {
+        return plan_tripod_foot_cycle(request);
+    }
+
+    std::array<vector3, leg_count> yaw_roots_in_body{};
+    for (const auto leg : leg_order) {
+        yaw_roots_in_body[leg_index(leg)] = kinematics.leg_to_body_frame(leg, {0.0, 0.0, 0.0});
+    }
+    return plan_tripod_foot_cycle(request, yaw_roots_in_body);
+}
+
 }  // namespace
 
 tripod_cycle_planner::tripod_cycle_planner(robot_model model) : kinematics_(model), segment_planner_(std::move(model)) {}
@@ -67,7 +80,7 @@ tripod_cycle_result tripod_cycle_planner::plan(const tripod_cycle_request& reque
     require_cycle_request(request);
 
     // 先生成完整的候选脚点周期。
-    auto geometry = plan_tripod_foot_cycle(request.foot_request);
+    auto geometry = plan_foot_cycle(request.foot_request, kinematics_);
 
     if (geometry.frames.size() < 2) {
         throw std::logic_error("Foot cycle must contain an initial frame and at least one target frame");

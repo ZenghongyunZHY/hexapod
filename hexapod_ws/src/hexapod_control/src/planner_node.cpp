@@ -39,19 +39,21 @@ using milliseconds = std::chrono::milliseconds;
 using positions = std::array<std::uint16_t, joint_count>;
 
 const planar_body_velocity zero_velocity{0.0, 0.0, 0.0};
+constexpr std::array<double, 3> finite_speed_limit_fractions{0.5694444444444444, 0.8541666666666666, 1.0};
+const tripod_timing_request recovery_timing{4.8, 2.0 / 3.0};
+constexpr std::size_t recovery_intervals = 4;
 
 enum class motion_mode { idle, teleop, finite, stopping };
 enum class plan_kind { finite, walking, braking, recovery };
 
 struct boundary_state {
     tripod_sequence_initial_state gait;
-    positions nominal_positions;
+    positions servo_positions;
     planar_body_velocity velocity;
 };
 
 struct cycle_checkpoint {
     std::size_t completed_segments;
-    milliseconds end_offset;
     boundary_state state;
 };
 
@@ -65,7 +67,7 @@ struct pending_plan {
     rclcpp::Time wall_end;
     monotonic_time start;
     monotonic_time end;
-    bool accepted = false;
+    std::optional<monotonic_time> completion_deadline;
 };
 
 struct queued_command {
@@ -113,10 +115,6 @@ planar_body_velocity approach_velocity(const planar_body_velocity& from, const p
         return to;
     }
     return {from.vx_m_s + fraction * dx, from.vy_m_s + fraction * dy, from.wz_rad_s + fraction * yaw_delta};
-}
-
-double foot_distance(const vector3& a, const vector3& b) {
-    return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
 std::string planning_failure(const walking_plan_result& result) {
@@ -172,7 +170,8 @@ class planner_node final : public rclcpp::Node {
         stop_pub_ = create_publisher<PlanStop>("plan_stop", qos);
         status_pub_ = create_publisher<PlannerStatus>("planner_status", qos);
         command_sub_ = create_subscription<MotionCommand>("motion_command", qos, [this](MotionCommand::ConstSharedPtr message) { on_command(*message); });
-        reference_sub_ = create_subscription<StandingReference>("standing_reference", qos, [this](StandingReference::ConstSharedPtr message) { on_reference(*message); });
+        const auto reference_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+        reference_sub_ = create_subscription<StandingReference>("standing_reference", reference_qos, [this](StandingReference::ConstSharedPtr message) { on_reference(*message); });
         execution_sub_ = create_subscription<ExecutionStatus>("execution_status", qos, [this](ExecutionStatus::ConstSharedPtr message) { on_execution(*message); });
         next_plan_id_ = static_cast<std::uint64_t>(system_clock_.now().nanoseconds());
         timer_ = create_wall_timer(20ms, [this] { tick(); });
@@ -204,14 +203,18 @@ class planner_node final : public rclcpp::Node {
     }
 
     void configure() {
-        timing_ = {number("cycle_period_s", 4.0, 0.01, 60.0), number("stance_ratio", 0.625, 0.500001, 0.999)};
-        intervals_per_stage_ = static_cast<std::size_t>(integer("intervals_per_stage", 10, 1, 100));
+        timing_ = {number("cycle_period_s", 4.0, 0.01, 60.0), number("stance_ratio", 0.55, 0.500001, 0.999)};
+        walking_geometry_ = {
+            static_cast<std::size_t>(integer("double_support_intervals", 1, 1, 100)),
+            static_cast<std::size_t>(integer("swing_intervals", 9, 1, 100)),
+            number("outward_offset_m", 0.025, 0.0, 0.2)
+        };
         path_intervals_ = static_cast<std::size_t>(integer("path_interval_count", 4, 1, 100));
         max_cycles_ = static_cast<std::uint32_t>(integer("max_cycles", 16, 1, 100));
-        lift_m_ = number("lift_height_m", 0.003, 0.000001, 0.2);
-        recovery_lift_m_ = number("recovery_lift_height_m", 0.003, 0.000001, 0.2);
+        lift_m_ = number("lift_height_m", 0.040, 0.000001, 0.2);
+        recovery_lift_m_ = number("recovery_lift_height_m", 0.008, 0.000001, 0.2);
         standing_tolerance_m_ = number("standing_tolerance_m", 0.001, 0.000001, 0.05);
-        const double speed = number("max_joint_speed_rad_s", 1.0, 0.000001, 20.0);
+        const double speed = number("max_joint_speed_rad_s", 2.0, 0.000001, 20.0);
         for (auto& limits : speed_limits_) {
             limits.fill(speed);
         }
@@ -219,12 +222,14 @@ class planner_node final : public rclcpp::Node {
         clearance_ = foot_clearance_policy{clearance, clearance, clearance};
 
         max_linear_speed_ = number("max_linear_speed_m_s", 0.005, 0.000001, 0.5);
+        max_forward_speed_ = number("max_forward_speed_m_s", std::max(0.035, max_linear_speed_),
+                                    max_linear_speed_, 0.5);
         max_yaw_speed_ = number("max_yaw_speed_rad_s", 0.03, 0.000001, 5.0);
-        linear_step_ = number("linear_step_m_s", 0.0005, 0.000001, max_linear_speed_);
-        yaw_step_ = number("yaw_step_rad_s", 0.003, 0.000001, max_yaw_speed_);
+        linear_step_ = number("linear_step_m_s", std::clamp(0.00542, max_linear_speed_, max_forward_speed_),
+                              0.000001, max_forward_speed_);
+        yaw_step_ = number("yaw_step_rad_s", max_yaw_speed_, 0.000001, max_yaw_speed_);
         linear_deadband_ = number("linear_deadband_m_s", 0.00005, 0.0, linear_step_);
         yaw_deadband_ = number("yaw_deadband_rad_s", 0.0005, 0.0, yaw_step_);
-        time_scale_ = number("time_scale", 4.0, 1.0, 100.0);
         min_segment_ms_ = static_cast<std::uint16_t>(integer("min_segment_ms", 200, 1, 5000));
         max_segment_ms_ = static_cast<std::uint16_t>(integer("max_segment_ms", 5000, min_segment_ms_, 65535));
         command_timeout_ = milliseconds(integer("command_timeout_ms", 500, 1, 30000));
@@ -233,24 +238,22 @@ class planner_node final : public rclcpp::Node {
         lead_ = milliseconds(integer("plan_lead_ms", 350, 1, 30000));
         lookahead_ = milliseconds(integer("lookahead_ms", 1200, static_cast<int>(lead_.count()), 30000));
         feedback_grace_ = milliseconds(integer("feedback_grace_ms", 1000, 1, 30000));
-        reference_age_ = milliseconds(integer("reference_max_age_ms", 3000, 1, 60000));
 
         const auto configured = startup_parameter("standing_positions", std::vector<std::int64_t>{});
         if (configured.size() != joint_count) {
             throw std::invalid_argument("standing_positions requires 18 explicit positions ordered by ID");
         }
-        positions values{};
         for (std::size_t i = 0; i < joint_count; ++i) {
             if (configured[i] < 0 || configured[i] > 1000) {
                 throw std::invalid_argument("standing_positions contains a non-native position");
             }
-            values[i] = static_cast<std::uint16_t>(configured[i]);
+            standing_positions_[i] = static_cast<std::uint16_t>(configured[i]);
         }
-        const auto angles = decode(values);
+        standing_angles_ = decode(standing_positions_);
         std::array<vector3, leg_count> feet{};
         for (const auto leg : leg_order) {
             const auto i = leg_index(leg);
-            feet[i] = kinematics_.forward_in_body_frame(leg, angles[i]);
+            feet[i] = kinematics_.forward_in_body_frame(leg, standing_angles_[i]);
             stance_xy_[i] = {feet[i].x, feet[i].y};
             ground_height_m_ += feet[i].z / static_cast<double>(leg_count);
         }
@@ -290,42 +293,51 @@ class planner_node final : public rclcpp::Node {
         return std::chrono::nanoseconds(age.nanoseconds());
     }
 
-    void report(std::uint64_t sequence, std::uint64_t plan, const std::string& state, const std::string& reason = {}) {
+    void report(std::uint64_t sequence, std::uint64_t plan, const std::string& state, const std::string& reason = {},
+                std::uint64_t completion_timeout_ms = 0) {
         PlannerStatus message;
         message.command_sequence = sequence;
         message.plan_id = plan;
+        if (reference_watermark_) {
+            message.standing_stamp = static_cast<builtin_interfaces::msg::Time>(*reference_watermark_);
+        }
         message.state = state;
         message.reason = reason;
+        message.completion_timeout_ms = completion_timeout_ms;
         status_pub_->publish(message);
     }
 
     void on_reference(const StandingReference& message) {
         try {
-            if (!pending_.empty() || mode_ != motion_mode::idle) {
-                throw std::invalid_argument("cannot replace the standing reference while a plan is active");
+            if (message.stamp.sec == 0 && message.stamp.nanosec == 0) {
+                throw std::invalid_argument("standing reference has no timestamp");
             }
-            if (stamp_age(message.stamp) >= reference_age_) {
-                throw std::invalid_argument("standing reference expired");
-            }
+            (void)stamp_age(message.stamp);
             const rclcpp::Time reference_stamp(message.stamp, RCL_SYSTEM_TIME);
             if (reference_watermark_ && reference_stamp <= *reference_watermark_) {
-                throw std::invalid_argument("standing reference predates the most recent reference or fault");
+                return;
             }
-            const auto angles = decode(message.positions);
+            reference_watermark_ = reference_stamp;
+            // The UART owner has preempted its queue. Do not ask it to finish any old cycle.
+            pending_.clear();
+            commands_.clear();
+            boundary_.reset();
+            reset_mode();
+            command_sequence_ = 0;
+            if (!message.ready) {
+                report(0, 0, "waiting_for_reference");
+                return;
+            }
+
             std::array<vector3, leg_count> anchors{};
             for (const auto leg : leg_order) {
                 const auto i = leg_index(leg);
                 anchors[i] = {stance_xy_[i].x_m, stance_xy_[i].y_m, ground_height_m_};
-                const auto foot = kinematics_.forward_in_body_frame(leg, angles[i]);
-                if (foot_distance(foot, anchors[i]) > standing_tolerance_m_) {
-                    throw std::invalid_argument("confirmed pose does not match the configured standing position");
-                }
             }
             boundary_.emplace(boundary_state{
-                {planar_body_pose{{0.0, 0.0, 0.0}, 0.0}, gait_foot_state(anchors), angles, {}},
-                message.positions, zero_velocity
+                {planar_body_pose{{0.0, 0.0, 0.0}, 0.0}, gait_foot_state(anchors), standing_angles_, {}},
+                standing_positions_, zero_velocity
             });
-            reference_watermark_ = reference_stamp;
             report(0, 0, "standing");
         } catch (const std::exception& error) {
             report(0, 0, "rejected", error.what());
@@ -333,16 +345,22 @@ class planner_node final : public rclcpp::Node {
     }
 
     void on_command(const MotionCommand& message) {
+        if (!boundary_) {
+            return;
+        }
         try {
             const auto received = steady_clock::now();
             const auto age = stamp_age(message.stamp);
+            const rclcpp::Time source_stamp(message.stamp, RCL_SYSTEM_TIME);
+            if (source_stamp <= *reference_watermark_) {
+                return;
+            }
             if (age >= command_timeout_) {
                 throw std::invalid_argument("motion command expired");
             }
             if (last_sequence_ && message.sequence <= *last_sequence_) {
                 throw std::invalid_argument("duplicate or out-of-order motion command");
             }
-            const rclcpp::Time source_stamp(message.stamp, RCL_SYSTEM_TIME);
             if (last_source_stamp_ && source_stamp < *last_source_stamp_) {
                 throw std::invalid_argument("motion command timestamp moved backwards");
             }
@@ -358,7 +376,8 @@ class planner_node final : public rclcpp::Node {
             } else if (message.kind == MotionCommand::WALK_CYCLES) {
                 const planar_body_velocity velocity{message.vx_m_s, message.vy_m_s, message.wz_rad_s};
                 if (!std::isfinite(linear_speed(velocity)) || !std::isfinite(velocity.wz_rad_s) ||
-                    linear_speed(velocity) > max_linear_speed_ || std::abs(velocity.wz_rad_s) > max_yaw_speed_) {
+                    linear_speed(velocity) > finite_linear_speed_limit(velocity) ||
+                    std::abs(velocity.wz_rad_s) > max_yaw_speed_) {
                     throw std::invalid_argument("motion command exceeds configured velocity limits");
                 }
                 if (message.cycle_count == 0 || message.cycle_count > max_cycles_) {
@@ -403,7 +422,6 @@ class planner_node final : public rclcpp::Node {
         pending_.clear();
         commands_.clear();
         boundary_.reset();
-        reference_watermark_ = system_clock_.now();
         reset_mode();
         report(command_sequence_, active, "fault", reason);
     }
@@ -442,20 +460,30 @@ class planner_node final : public rclcpp::Node {
     }
 
     tripod_sequence_cycle_parameters cycle(planar_body_velocity speed) const {
-        return {timing_, intervals_per_stage_, speed, lift_m_};
+        return {timing_, walking_geometry_.swing_intervals, speed, lift_m_};
+    }
+
+    double finite_linear_speed_limit(const planar_body_velocity& velocity) const {
+        const bool straight_forward = velocity.vx_m_s > 0.0 && velocity.vy_m_s == 0.0 && velocity.wz_rad_s == 0.0;
+        return straight_forward ? max_forward_speed_ : max_linear_speed_;
     }
 
     std::vector<tripod_sequence_cycle_parameters> finite_cycles(const planar_body_velocity& peak, std::size_t count) const {
+        std::vector<tripod_sequence_cycle_parameters> result;
+        result.reserve(count);
         const double linear = linear_speed(peak);
         const double yaw = std::abs(peak.wz_rad_s);
         const double ramp_fraction = std::min(
             linear == 0.0 ? 1.0 : linear_step_ / linear,
             yaw == 0.0 ? 1.0 : yaw_step_ / yaw);
-        std::vector<tripod_sequence_cycle_parameters> result;
-        result.reserve(count);
+        const double requested_limit_fraction = std::max(linear / finite_linear_speed_limit(peak), yaw / max_yaw_speed_);
         for (std::size_t i = 0; i < count; ++i) {
-            const auto steps = static_cast<double>(std::min(i + 1, count - i));
-            result.push_back(cycle(scaled_velocity(peak, std::min(1.0, steps * ramp_fraction))));
+            const auto steps = std::min(i + 1, count - i);
+            const auto stage = std::min(steps - 1, finite_speed_limit_fractions.size() - 1);
+            const auto stage_limit = finite_speed_limit_fractions[stage];
+            const double fraction = std::min({1.0, static_cast<double>(steps) * ramp_fraction,
+                stage_limit / std::max(stage_limit, requested_limit_fraction)});
+            result.push_back(cycle(scaled_velocity(peak, fraction)));
         }
         return result;
     }
@@ -465,14 +493,10 @@ class planner_node final : public rclcpp::Node {
         if (cmd.kind == MotionCommand::STOP) {
             command_sequence_ = cmd.sequence;
             if (mode_ == motion_mode::idle) {
-                report(cmd.sequence, 0, boundary_ ? "standing" : "waiting_for_reference");
+                report(cmd.sequence, 0, "standing");
             } else {
                 latch_stop("user stop");
             }
-            return;
-        }
-        if (!boundary_) {
-            report(cmd.sequence, 0, "rejected", "a confirmed standing reference is required");
             return;
         }
         if (cmd.kind == MotionCommand::WALK_CYCLES) {
@@ -525,15 +549,20 @@ class planner_node final : public rclcpp::Node {
         filter_updated_ = sample_time;
     }
 
-    bool prepare(const boundary_state& begin, std::vector<tripod_sequence_cycle_parameters> cycles, bool recover, plan_kind kind) {
+    bool prepare(const boundary_state& begin, std::vector<tripod_sequence_cycle_parameters> cycles, bool recover,
+                 plan_kind kind) {
         const auto end_velocity = recover ? zero_velocity : cycles.back().velocity;
         const tripod_sequence_schedule_request request{
             begin.gait, std::move(cycles), stance_xy_, ground_height_m_,
             {knee_singularity_policy::reject, branch_continuity_policy::keep_reference_branch},
-            speed_limits_, path_intervals_, standing_tolerance_m_, standing_tolerance_m_, clearance_
+            speed_limits_, path_intervals_, standing_tolerance_m_, standing_tolerance_m_, clearance_,
+            walking_geometry_
         };
         const auto recovery = recover ? std::optional<stance_recovery_parameters>{
-            stance_recovery_parameters{timing_, intervals_per_stage_, recovery_lift_m_, stance_xy_, standing_tolerance_m_}
+            stance_recovery_parameters{
+                recovery_timing, recovery_intervals, recovery_lift_m_,
+                stance_xy_, standing_tolerance_m_
+            }
         } : std::nullopt;
         auto result = planner_.plan(request, recovery);
         if (!result.solution) {
@@ -552,7 +581,8 @@ class planner_node final : public rclcpp::Node {
             latch_stop("teleop expired during planning");
             return false;
         }
-        auto message = make_servo_plan(solution.timeline, time_scale_, min_segment_ms_, max_segment_ms_, ++next_plan_id_, begin.nominal_positions, solution.full_cycle_count);
+        auto message = make_servo_plan(solution.timeline, 1.0, min_segment_ms_, max_segment_ms_, ++next_plan_id_, begin.servo_positions, solution.full_cycle_count);
+        message.standing_stamp = static_cast<builtin_interfaces::msg::Time>(*reference_watermark_);
         std::vector<cycle_checkpoint> checkpoints;
         if (kind == plan_kind::finite) {
             checkpoints.reserve(solution.full_cycle_count);
@@ -562,9 +592,8 @@ class planner_node final : public rclcpp::Node {
                     continue;
                 }
                 const auto cycle_index = checkpoints.size();
-                const milliseconds end_offset{segment.start_offset_ms + static_cast<std::uint64_t>(segment.move_duration_ms)};
                 checkpoints.push_back({
-                    i + 1, end_offset,
+                    i + 1,
                     {std::move(solution.cycle_end_states.at(cycle_index)), segment.positions, request.cycles.at(cycle_index).velocity}
                 });
             }
@@ -583,7 +612,7 @@ class planner_node final : public rclcpp::Node {
         pending_.push_back({
             message.plan_id, command_sequence_, kind, message.segments.size(),
             {std::move(solution.final_state), last.positions, end_velocity},
-            std::move(checkpoints), wall_start + rclcpp::Duration(duration), start, start + duration
+            std::move(checkpoints), wall_start + rclcpp::Duration(duration), start, start + duration, std::nullopt
         });
         try {
             plan_pub_->publish(message);
@@ -596,28 +625,35 @@ class planner_node final : public rclcpp::Node {
     }
 
     void on_execution(const ExecutionStatus& message) {
-        if (message.plan_id == 0 && message.state == ExecutionStatus::FAILED) {
-            invalidate("execution reference lost: " + message.reason);
-            return;
-        }
         const auto it = std::find_if(pending_.begin(), pending_.end(),
             [&message](const pending_plan& candidate) { return candidate.id == message.plan_id; });
         if (it == pending_.end()) {
             return;
         }
         switch (message.state) {
-            case ExecutionStatus::ACCEPTED:
-                it->accepted = true;
-                report(it->sequence, it->id, "accepted");
+            case ExecutionStatus::ACCEPTED: {
+                if (it->completion_deadline) {
+                    return;
+                }
+                const auto available = monotonic_time::max() - it->end;
+                if (available < feedback_grace_ || message.maximum_finish_delay_ms > static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<milliseconds>(available - feedback_grace_).count())) {
+                    invalidate("execution completion deadline exceeds clock range");
+                    return;
+                }
+                const auto delay = milliseconds{static_cast<milliseconds::rep>(message.maximum_finish_delay_ms)};
+                it->completion_deadline = it->end + delay + feedback_grace_;
+                const auto remaining = std::chrono::ceil<milliseconds>(*it->completion_deadline - steady_clock::now());
+                report(it->sequence, it->id, "accepted", {}, static_cast<std::uint64_t>(std::max(0ms, remaining).count()));
                 return;
+            }
             case ExecutionStatus::FAILED:
             case ExecutionStatus::REJECTED:
                 invalidate("execution did not complete: " + message.reason);
                 return;
             case ExecutionStatus::COMPLETED:
-                if (it != pending_.begin() || !it->accepted ||
-                    message.completed_segments != it->segment_count || steady_clock::now() < it->end) {
-                    invalidate("execution completion was out of order, early, or incomplete");
+                if (it != pending_.begin() || !it->completion_deadline || message.completed_segments != it->segment_count) {
+                    invalidate("execution completion was out of order, unacknowledged, or incomplete");
                     return;
                 }
                 boundary_ = std::move(it->end_state);
@@ -639,7 +675,7 @@ class planner_node final : public rclcpp::Node {
                         [&message](const cycle_checkpoint& checkpoint) {
                             return checkpoint.completed_segments == message.completed_segments;
                         });
-                    if (!it->accepted || point == it->checkpoints.end() || steady_clock::now() < it->start + point->end_offset) {
+                    if (!it->completion_deadline || point == it->checkpoints.end()) {
                         invalidate("execution interrupted outside a complete walking cycle boundary");
                         return;
                     }
@@ -658,7 +694,7 @@ class planner_node final : public rclcpp::Node {
     void tick() {
         auto now = steady_clock::now();
         for (const auto& plan : pending_) {
-            if ((!plan.accepted && now >= plan.start) || now >= plan.end + feedback_grace_) {
+            if (now >= plan.completion_deadline.value_or(plan.start)) {
                 invalidate("execution acknowledgement or completion timed out");
                 return;
             }
@@ -681,7 +717,7 @@ class planner_node final : public rclcpp::Node {
         }
         if (!pending_.empty()) {
             const auto& tail = pending_.back();
-            if (!tail.accepted || tail.kind == plan_kind::finite || tail.kind == plan_kind::recovery ||
+            if (!tail.completion_deadline || tail.kind == plan_kind::finite || tail.kind == plan_kind::recovery ||
                 tail.end - now > lookahead_ || tail.end - now < lead_) {
                 return;
             }
@@ -715,25 +751,27 @@ class planner_node final : public rclcpp::Node {
     leg_kinematics kinematics_;
     walking_planner planner_;
     rclcpp::Clock system_clock_;
-    tripod_timing_request timing_{4.0, 0.625};
-    std::size_t intervals_per_stage_{};
+    tripod_timing_request timing_{4.8, 0.55};
+    tripod_walking_profile walking_geometry_{};
     std::size_t path_intervals_{};
     std::uint32_t max_cycles_{};
     double lift_m_{};
     double recovery_lift_m_{};
     double standing_tolerance_m_{};
+    positions standing_positions_{};
+    std::array<leg_joint_angles, leg_count> standing_angles_{};
     double ground_height_m_{};
     std::array<stance_midpoint_reference, leg_count> stance_xy_{};
     std::array<std::array<double, joints_per_leg>, leg_count> speed_limits_{};
     std::optional<foot_clearance_policy> clearance_;
     double max_linear_speed_{};
+    double max_forward_speed_{};
     double max_yaw_speed_{};
     double linear_step_{};
     double yaw_step_{};
     double linear_deadband_{};
     double yaw_deadband_{};
     double filter_time_ms_{};
-    double time_scale_{};
     std::uint16_t min_segment_ms_{};
     std::uint16_t max_segment_ms_{};
     milliseconds command_timeout_{};
@@ -741,7 +779,6 @@ class planner_node final : public rclcpp::Node {
     milliseconds lead_{};
     milliseconds lookahead_{};
     milliseconds feedback_grace_{};
-    milliseconds reference_age_{};
 
     motion_mode mode_{motion_mode::idle};
     planar_body_velocity target_ = zero_velocity;

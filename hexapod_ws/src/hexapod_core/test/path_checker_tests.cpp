@@ -127,8 +127,9 @@ void test_joint_limits(const robot_model& model) {
     for (const auto leg : leg_order) {
         for (std::size_t axis = 0; axis < joints_per_leg; ++axis) {
             for (const double sign : {-1.0, 1.0}) {
+                const double limit_deg = axis == 2 && sign < 0 ? 96.0 : 86.4;
                 auto outside = zero;
-                outside.*members[axis] = degrees_to_radians(sign * 90);
+                outside.*members[axis] = degrees_to_radians(sign * (limit_deg + 1.0));
                 const auto first = checker.check_linear_segment(leg,
                     outside, zero, 2, permissive);
                 require_failure(first, leg_path_check_status::joint_limit_exceeded, 0, 0);
@@ -139,7 +140,7 @@ void test_joint_limits(const robot_model& model) {
                 require(last.failed_joint == joint_order[axis], "last-point joint type");
 
                 auto boundary = zero;
-                boundary.*members[axis] = degrees_to_radians(sign * 86.4);
+                boundary.*members[axis] = degrees_to_radians(sign * limit_deg);
                 require_pass(checker.check_linear_segment(leg, boundary, boundary, 1,
                     permissive), 2);
                 auto numerical_roundoff = boundary;

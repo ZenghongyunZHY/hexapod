@@ -153,7 +153,7 @@ void servo_controller::check_link() {
     poll_serial(fd_, 0, 0);
 }
 
-void servo_controller::send(const std::uint8_t* bytes, std::size_t size, monotonic_time deadline) {
+monotonic_time servo_controller::send(const std::uint8_t* bytes, std::size_t size, monotonic_time deadline) {
     constexpr auto timeout = "UART write deadline expired; a partial packet may have been queued";
     std::size_t offset = 0;
     while (offset < size) {
@@ -166,12 +166,14 @@ void servo_controller::send(const std::uint8_t* bytes, std::size_t size, monoton
         if (count == 0) throw std::runtime_error("UART write made no progress");
         offset += static_cast<std::size_t>(count);
     }
-    if (monotonic_clock::now() >= deadline) throw std::runtime_error(timeout);
+    const auto written_at = monotonic_clock::now();
+    if (written_at >= deadline) throw std::runtime_error(timeout);
+    return written_at;
 }
 
-void servo_controller::send_move(const servo_positions& positions, std::uint16_t duration_ms, monotonic_time deadline) {
+monotonic_time servo_controller::send_move(const servo_positions& positions, std::uint16_t duration_ms, monotonic_time deadline) {
     const auto packet = encode_move(positions, duration_ms);
-    send(packet.data(), packet.size(), deadline);
+    return send(packet.data(), packet.size(), deadline);
 }
 
 std::vector<std::uint8_t> servo_controller::query(const byte_vector& request, std::uint8_t command, monotonic_time deadline) {
@@ -234,7 +236,7 @@ std::uint16_t servo_controller::voltage_mv(monotonic_time deadline) {
 servo_controller::servo_controller(const std::string&) { unavailable(); }
 servo_controller::~servo_controller() = default;
 void servo_controller::check_link() { unavailable(); }
-void servo_controller::send_move(const servo_positions&, std::uint16_t, monotonic_time) { unavailable(); }
+monotonic_time servo_controller::send_move(const servo_positions&, std::uint16_t, monotonic_time) { unavailable(); }
 servo_positions servo_controller::positions(monotonic_time) { unavailable(); }
 std::uint16_t servo_controller::voltage_mv(monotonic_time) { unavailable(); }
 #endif

@@ -11,6 +11,9 @@ hexapod_ws/log/
 /.pi_sync_baseline.json
 **/.vscode/
 
+# Local operator console and Raspberry Pi debugging tools.
+/hexapod_remote/
+
 # Local credentials and editor/OS caches.
 .env
 .env.*

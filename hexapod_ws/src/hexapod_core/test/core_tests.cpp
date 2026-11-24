@@ -82,7 +82,7 @@ void test_types() {
 }
 
 // 从 path 加载真实基准配置，对照 root 验证 18 轴绑定、单位换算和来源保留。
-// 验证用户确认的 500 零位、140～860 限幅和 CAD 理想模型；不连接硬件。
+// 验证用户确认的 500 零位、V1 命令限幅和 CAD 理想模型；不连接硬件。
 void test_real_baseline(const json& root, const std::string& path) {
   const auto model = robot_model::from_file(path);
   require(model.legs().size() == 6 && model.joints().size() == 18, "full model loaded");
@@ -102,17 +102,19 @@ void test_real_baseline(const json& root, const std::string& path) {
       require_near(mapper.servo_position_to_joint_angle_rad(id, servo_position(500)), 0.0, "user-confirmed zero pose");
       require_near(mapper.servo_position_to_joint_angle_rad(id, servo_position(550)),
                    degrees_to_radians(sign * 12.0), "axis sign agrees with selected convention");
-      // 每个轴的所有已授权整数位置都应往返一致，包括两个限幅端点。
-      for (int position = 140; position <= 860; ++position) {
+      const int minimum = (local == 2 && sign == 1) ? 100 : 140;
+      const int maximum = (local == 2 && sign == -1) ? 900 : 860;
+      // 在两个命令限幅端点之间，每个位置应往返一致。
+      for (int position = minimum; position <= maximum; ++position) {
         const double angle = mapper.servo_position_to_joint_angle_rad(id, servo_position(position));
         require(mapper.joint_angle_rad_to_servo_position(id, angle).value() == position, "installed range round-trip");
       }
-      require_throws<std::out_of_range>([&] {
-        (void)mapper.joint_angle_rad_to_servo_position(id, degrees_to_radians(sign * 86.41));
-      }, "command above installed position range rejected");
-      require_throws<std::out_of_range>([&] {
-        (void)mapper.joint_angle_rad_to_servo_position(id, degrees_to_radians(-sign * 86.41));
-      }, "command below installed position range rejected");
+      for (const int outside : {minimum - 1, maximum + 1}) {
+        require_throws<std::out_of_range>([&] {
+          const double angle = mapper.servo_position_to_joint_angle_rad(id, servo_position(outside));
+          (void)mapper.joint_angle_rad_to_servo_position(id, angle);
+        }, "command outside installed position range rejected");
+      }
       // 协议范围仍为 0～1000，越过安装限位的反馈应能解码用于诊断。
       require_near(mapper.servo_position_to_joint_angle_rad(id, servo_position(0)),
                    degrees_to_radians(-sign * 120.0), "out-of-limit feedback remains observable");

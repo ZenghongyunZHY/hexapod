@@ -3,7 +3,7 @@
   <name>hexapod_bringup</name>
   <version>0.1.0</version>
   <description>Offline integration for the three hexapod runtime nodes.</description>
-  <maintainer email="hexapod@localhost">Hexapod</maintainer>
+  <maintainer email="hexapod@example.invalid">Hexapod</maintainer>
   <license>UNLICENSED</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>hexapod_control</exec_depend>

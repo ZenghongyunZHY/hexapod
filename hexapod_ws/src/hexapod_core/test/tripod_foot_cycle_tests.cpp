@@ -127,6 +127,61 @@ void test_half_duty_and_cycle_join() {
     }
 }
 
+void test_walking_profile() {
+    auto request = example_request();
+    request.timing.period_s = 14.4;
+    request.initial_pose.yaw_rad = 0.35;
+    request.velocity = {0.005, -0.003, 0.09};
+    request.lift_height_m = 0.04;
+    const auto legacy = plan_tripod_foot_cycle(request);
+    request.walking_profile = tripod_walking_profile{10, 10, 0.0};
+    const auto uniform_profile = plan_tripod_foot_cycle(request);
+    require(uniform_profile.frames.size() == legacy.frames.size(), "equal subdivisions preserve the legacy frame count");
+    for (std::size_t row = 0; row < legacy.frames.size(); ++row) {
+        require(uniform_profile.frames[row].sample.time_s == legacy.frames[row].sample.time_s,
+            "equal subdivisions preserve legacy timestamps");
+        for (const auto leg : leg_order) {
+            const auto index = leg_index(leg);
+            point_near(uniform_profile.frames[row].targets.points_in_planning_frame[index],
+                legacy.frames[row].targets.points_in_planning_frame[index], "zero offset preserves legacy foot targets");
+        }
+    }
+
+    request.walking_profile = tripod_walking_profile{2, 10, 0.0};
+    const auto vertical = plan_tripod_foot_cycle(request);
+    request.walking_profile->outward_offset_m = 0.035;
+    const std::array<vector3, leg_count> roots{{
+        {0.1, -0.08, 0.02}, {0.0, -0.1, 0.02}, {-0.1, -0.08, 0.02},
+        {0.1, 0.08, 0.02}, {0.0, 0.1, 0.02}, {-0.1, 0.08, 0.02}}};
+    const auto outward = plan_tripod_foot_cycle(request, roots);
+    require(outward.frames.size() == 25 && vertical.frames.size() == 25, "outward and vertical cycles use the same subdivisions");
+    for (std::size_t index = 0; index < leg_count; ++index) {
+        const bool group_a = index == 0 || index == 2 || index == 4;
+        const std::size_t start = group_a ? 14 : 2;
+        const std::size_t end = group_a ? 24 : 12;
+        const auto& lift_pose = outward.frames[start].body_pose;
+        const auto& initial_anchor = request.initial_feet.stance_points()[index];
+        const double c = std::cos(lift_pose.yaw_rad);
+        const double s = std::sin(lift_pose.yaw_rad);
+        const double root_x = lift_pose.body_origin_in_planning_frame.x + c * roots[index].x - s * roots[index].y;
+        const double root_y = lift_pose.body_origin_in_planning_frame.y + s * roots[index].x + c * roots[index].y;
+        const double dx = initial_anchor.x - root_x;
+        const double dy = initial_anchor.y - root_y;
+        const double radial = std::hypot(dx, dy);
+        for (const auto row : {start, end}) {
+            point_near(outward.frames[row].targets.points_in_planning_frame[index],
+                vertical.frames[row].targets.points_in_planning_frame[index], "outward offset preserves each swing endpoint");
+        }
+        const auto midpoint = start + 5;
+        const auto& vertical_peak = vertical.frames[midpoint].targets.points_in_planning_frame[index];
+        point_near(outward.frames[midpoint].targets.points_in_planning_frame[index],
+            {vertical_peak.x + 0.035 * dx / radial, vertical_peak.y + 0.035 * dy / radial, 0.04},
+            "swing middle keeps 40 mm vertical lift and offsets 35 mm along the lift-off direction");
+        point_near(outward.final_feet.stance_points()[index], vertical.final_feet.stance_points()[index],
+            "outward swing preserves each saved support anchor");
+    }
+}
+
 void test_invalid_input() {
     const auto valid = example_request();
     const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -171,6 +226,19 @@ void test_invalid_input() {
     request = valid;
     request.velocity.vx_m_s = std::numeric_limits<double>::max();
     require_throws<std::overflow_error>([&] { (void)plan_tripod_foot_cycle(request); }, "prediction overflow propagates");
+
+    for (const double offset : {-0.001, nan, inf}) {
+        request = valid;
+        request.walking_profile = tripod_walking_profile{2, 10, offset};
+        require_throws<std::invalid_argument>([&] { (void)plan_tripod_foot_cycle(request); }, "invalid outward offset");
+    }
+    request = valid;
+    request.walking_profile = tripod_walking_profile{2, 10, 0.035};
+    require_throws<std::invalid_argument>([&] { (void)plan_tripod_foot_cycle(request); }, "outward swing requires yaw roots");
+    request.velocity = {0.0, 0.0, 0.0};
+    std::array<vector3, leg_count> roots{};
+    roots[leg_index(leg_id::right_middle)] = request.initial_feet.stance_points()[leg_index(leg_id::right_middle)];
+    require_throws<std::invalid_argument>([&] { (void)plan_tripod_foot_cycle(request, roots); }, "zero horizontal direction");
 }
 
 }  // namespace
@@ -179,6 +247,7 @@ int main() {
     try {
         test_independent_cycle();
         test_half_duty_and_cycle_join();
+        test_walking_profile();
         test_invalid_input();
         std::cout << "PASS: full tripod foot cycle, independent landings and lift, fixed supports, half-duty events, cycle joins and input rejection.\n";
         return 0;

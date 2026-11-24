@@ -18,7 +18,8 @@ execution_report report(std::uint64_t id, execution_state state, std::size_t com
 
 plan_executor::plan_executor(execution_options options, position_validator validate_positions)
     : options_(options), validate_positions_(std::move(validate_positions)) {
-  if (!validate_positions_ || options_.wire_time < 0ns || options_.send_advance <= options_.wire_time || options_.completion_margin < 0ms) {
+  if (!validate_positions_ || options_.wire_time < 0ns || options_.send_advance <= options_.wire_time ||
+      options_.completion_margin < 0ms || options_.frame_lateness < 0ms || options_.write_timeout <= 0ms) {
     throw std::invalid_argument("Invalid serial timing or position validator");
   }
 }
@@ -33,6 +34,29 @@ void plan_executor::confirm(const servo_positions& positions) {
 
 std::chrono::milliseconds plan_executor::segment_end(const timed_segment& segment) {
   return std::chrono::milliseconds(segment.start_offset_ms) + std::chrono::milliseconds(segment.move_duration_ms);
+}
+
+std::uint64_t plan_executor::finish_delay_ms(std::size_t count, const accepted_plan* predecessor) const {
+  const auto margin = static_cast<std::uint64_t>(options_.completion_margin.count());
+  const auto per_frame = static_cast<std::uint64_t>(options_.frame_lateness.count()) +
+      static_cast<std::uint64_t>(options_.write_timeout.count());
+  auto fixed_delay = margin;
+  if (predecessor) {
+    fixed_delay += predecessor->maximum_finish_delay_ms +
+        static_cast<std::uint64_t>(std::chrono::ceil<std::chrono::milliseconds>(options_.wire_time).count());
+  }
+  // An idle-start first write must still complete before its nominal wire deadline.
+  const auto delayed_frames = predecessor ? count : count - 1;
+  constexpr auto maximum_delay = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::nanoseconds::max()).count());
+  if (fixed_delay > maximum_delay || (delayed_frames != 0 && per_frame > (maximum_delay - fixed_delay) / delayed_frames)) {
+    throw std::out_of_range("Maximum serial finish delay cannot be represented");
+  }
+  return fixed_delay + delayed_frames * per_frame;
+}
+
+monotonic_time plan_executor::scheduled_write(const accepted_plan& plan) const {
+  return plan.next_write.value_or(plan.nominal_start - options_.send_advance);
 }
 
 void plan_executor::validate(const timed_plan& plan) const {
@@ -75,15 +99,15 @@ std::optional<execution_report> plan_executor::admit(timed_plan plan, std::chron
       throw std::logic_error("Only one following servo plan can be queued");
     }
     validate(plan);
+    const auto* predecessor = queue_.empty() ? nullptr : &queue_.back();
     monotonic_time start;
-    if (!queue_.empty()) {
-      const auto& previous = queue_.back();
-      const auto& final = previous.plan.segments.back();
-      if (previous.send_through != previous.plan.segments.size() || plan.initial_positions != final.positions ||
-          plan.motion_start != previous.plan.motion_start + segment_end(final)) {
+    if (predecessor) {
+      const auto& final = predecessor->plan.segments.back();
+      if (predecessor->send_through != predecessor->plan.segments.size() || plan.initial_positions != final.positions ||
+          plan.motion_start != predecessor->plan.motion_start + segment_end(final)) {
         throw std::invalid_argument("Following plan does not match the preceding end time and positions");
       }
-      start = previous.start + segment_end(final);
+      start = predecessor->nominal_start + segment_end(final);
     } else {
       if (plan.initial_positions != *reference_) {
         throw std::invalid_argument("Initial positions do not match the current execution reference");
@@ -94,8 +118,9 @@ std::optional<execution_report> plan_executor::admit(timed_plan plan, std::chron
       throw std::invalid_argument("Insufficient lead time before the first frame");
     }
     const auto count = plan.segments.size();
-    queue_.push_back({std::move(plan), start, count});
-    return report(newest_plan_, execution_state::accepted, 0);
+    const auto maximum_finish_delay_ms = finish_delay_ms(count, predecessor);
+    queue_.push_back({std::move(plan), start, count, maximum_finish_delay_ms});
+    return execution_report{newest_plan_, execution_state::accepted, 0, {}, maximum_finish_delay_ms};
   } catch (const std::logic_error& error) {
     // Rejection invalidates the planner's reference. Clear dependent motion now too.
     queue_.clear();
@@ -116,14 +141,8 @@ std::optional<execution_report> plan_executor::request_stop(std::uint64_t id, mo
     return std::nullopt;
   }
   if (plan != queue_.begin()) {
-    if (plan->sent != 0) {
-      return fail("Following plan already sent its first frame when cancelled", now);
-    }
     queue_.pop_back();
     return report(id, execution_state::interrupted, 0, "Following plan cancelled before its first write");
-  }
-  if (queue_.size() == 2 && queue_.back().sent != 0) {
-    return fail("Following plan already sent its first frame when preceding plan was cancelled", now);
   }
   if (queue_.size() == 2) {
     queue_.pop_back();
@@ -142,8 +161,9 @@ std::optional<execution_report> plan_executor::request_stop(std::uint64_t id, mo
   return advance(now);
 }
 
-void plan_executor::update_completed(accepted_plan& plan, monotonic_time now) const {
-  while (plan.completed < plan.sent && now >= plan.start + segment_end(plan.plan.segments[plan.completed]) + options_.completion_margin) {
+void plan_executor::update_completed(accepted_plan& plan, monotonic_time now) {
+  while (!plan.completions.empty() && now >= plan.completions.front()) {
+    plan.completions.pop_front();
     ++plan.completed;
   }
 }
@@ -177,56 +197,70 @@ std::optional<execution_report> plan_executor::advance(monotonic_time now) {
   const auto result = report(active.plan.id, complete ? execution_state::completed : execution_state::interrupted, active.completed,
       complete ? "" : "Stopped at a complete walking-cycle boundary");
   reference_ = active.plan.segments[active.completed - 1].positions;
+  const auto completed_at = *active.next_write + options_.wire_time + options_.completion_margin;
   queue_.pop_front();
+  if (!queue_.empty()) {
+    queue_.front().next_write = completed_at;
+  }
   return result;
 }
 
 std::optional<frame_dispatch> plan_executor::due(monotonic_time now) const {
-  for (const auto& plan : queue_) {
-    if (plan.sent == plan.send_through) {
-      continue;
+  if (queue_.empty() || queue_.front().sent == queue_.front().send_through) {
+    return std::nullopt;
+  }
+  const auto& plan = queue_.front();
+  const auto send_time = scheduled_write(plan);
+  if (now < send_time) {
+    return std::nullopt;
+  }
+
+  auto write_deadline = now + options_.write_timeout;
+  if (plan.next_write) {
+    if (now - send_time > options_.frame_lateness) {
+      throw std::runtime_error("Servo frame scheduling lateness exceeded");
     }
-    const auto& segment = plan.plan.segments[plan.sent];
-    const auto start = plan.start + std::chrono::milliseconds(segment.start_offset_ms);
-    if (now < start - options_.send_advance) {
-      return std::nullopt;
-    }
-    const auto deadline = start - options_.wire_time;
-    if (now >= deadline) {
+  } else {
+    write_deadline = std::min(write_deadline, plan.nominal_start - options_.wire_time);
+    if (now >= write_deadline) {
       throw std::runtime_error("Servo frame send deadline missed");
     }
-    return frame_dispatch{plan.plan.id, plan.sent, segment.positions, segment.move_duration_ms, deadline};
   }
-  return std::nullopt;
+  const auto& segment = plan.plan.segments[plan.sent];
+  return frame_dispatch{plan.plan.id, plan.sent, segment.positions, segment.move_duration_ms, write_deadline};
 }
 
-void plan_executor::mark_sent(const frame_dispatch& frame) {
-  for (auto& plan : queue_) {
-    if (plan.sent < plan.send_through) {
-      if (plan.plan.id != frame.id || plan.sent != frame.index) {
-        break;
-      }
-      ++plan.sent;
-      return;
-    }
+void plan_executor::mark_sent(const frame_dispatch& frame, monotonic_time written_at) {
+  if (queue_.empty() || queue_.front().sent >= queue_.front().send_through ||
+      queue_.front().plan.id != frame.id || queue_.front().sent != frame.index) {
+    throw std::logic_error("Dispatched frame does not match the execution queue");
   }
-  throw std::logic_error("Dispatched frame does not match the execution queue");
+  if (written_at >= frame.write_deadline) {
+    throw std::runtime_error("Servo frame write deadline missed");
+  }
+  auto& plan = queue_.front();
+  if (written_at < scheduled_write(plan)) {
+    throw std::logic_error("Servo frame write timestamp precedes its scheduled send");
+  }
+  const auto duration = std::chrono::milliseconds(plan.plan.segments[plan.sent].move_duration_ms);
+  const auto next_write = written_at + duration;
+  plan.completions.push_back(next_write + options_.wire_time + options_.completion_margin);
+  plan.next_write = next_write;
+  ++plan.sent;
 }
 
-std::optional<monotonic_time> plan_executor::next_wakeup() const {
+std::optional<monotonic_time> plan_executor::next_wakeup(monotonic_time earliest_dispatch) const {
   if (queue_.empty()) {
     return std::nullopt;
   }
   std::optional<monotonic_time> wakeup;
   const auto& active = queue_.front();
-  if (active.completed < active.sent) {
-    wakeup = active.start + segment_end(active.plan.segments[active.completed]) + options_.completion_margin;
+  if (!active.completions.empty()) {
+    wakeup = active.completions.front();
   }
-  for (const auto& plan : queue_) {
-    if (plan.sent < plan.send_through) {
-      const auto send_time = plan.start + std::chrono::milliseconds(plan.plan.segments[plan.sent].start_offset_ms) - options_.send_advance;
-      return wakeup ? std::min(*wakeup, send_time) : send_time;
-    }
+  if (active.sent < active.send_through) {
+    const auto eligible = std::max(scheduled_write(active), earliest_dispatch);
+    return wakeup ? std::min(*wakeup, eligible) : eligible;
   }
   return wakeup;
 }

@@ -148,7 +148,7 @@ body_ik_solver 按 leg_order 处理六腿，通过 robot_model 查询物理 ID �
 
 | 名称 | 代码名称 | 含义 |
 | --- | --- | --- |
-| 舵机位置值 | servo_position | 协议整数；原生范围 0～1000，当前命令限幅 140～860 |
+| 舵机位置值 | servo_position | 原生协议整数范围为 0～1000，命令按各关节的软件限位检查。 |
 | 舵机相对角 | servo_relative_angle_rad | 相对参考位置值的转角，位置值增大为正；当前参考位置为 500 |
 | 关节角 | joint_angle_rad | 运动学使用的角度，按该关节约定的数学正轴确定正负 |
 | 关节参考角 | reference_joint_angle_rad | 舵机处于参考位置值时的关节角；当前全部为 0 |
@@ -193,7 +193,7 @@ const double servo_relative_angle_rad = mapper.servo_position_to_servo_relative_
 
 `is_mapping_ready()` 只检查该轴的数学方向与关节参考角是否齐全；`is_command_ready()` 还检查安装限位是否已填写。两者都不表示已完成实机标定或碰撞检查，也不表示 FK/IK 所需的安装信息全部齐全。
 
-当前配置采用用户选择的水平展开零位（500→0°）、18 轴方向、140～860 对应的数学限位 ±86.4°及六腿 CAD 安装变换。2026-10-20 已选择金属端触点，2026-10-21 用户明确确认实物未安装胶垫；当前 lower_leg 触点为 (0,−112.53,0) mm，模长等于 CAD 金属端 L3。方向为偏航全部 +1，右俯仰 +1、左俯仰 −1。原生协议范围仍为 0～1000，实际角度命令受安装限位约束。几何采用 CAD 理想值，状态不升级为实测。完整坐标和来源见工作区 docs/physical-baseline.md。
+当前配置采用用户选择的水平展开零位（500→0°）、18 轴方向及六腿 CAD 安装变换。2026-10-20 已选择金属端触点，2026-10-21 用户明确确认实物未安装胶垫。当前 lower_leg 触点为 (0,−112.53,0) mm，模长等于 CAD 金属端 L3。方向为偏航全部 +1，右俯仰 +1、左俯仰 −1。软件命令限位为偏航和大腿俯仰 [−86.4°, +86.4°]、膝关节 [−96°, +86.4°]。原生协议和用户报告的当前固件位置范围均为 0～1000。几何采用 CAD 理想值，新增膝关节范围的实物装配干涉及机械边界待实测。 [物理基准](../../docs/physical-baseline.md)
 
 model.convention() 可读取零位伸展方向 (0,−1,0) 和三个零位数学正轴 [(0,0,1),(−1,0,0),(−1,0,0)]。它们在腿根局部坐标系表达，后级轴随前级关节转动。lower_leg 触点坐标系在第三轴中心，随小腿转动；零位与腿根坐标系同向。金属 L3 和理想触点向量分别保留，当前触点模长等于金属 L3，计算脚端时不能重复叠加。
 
@@ -243,7 +243,7 @@ inverse_candidates_in_leg_frame() 接收腿根局部脚点（米），返回 leg
 
 - joint_angle_signs：位置值增加时关节角的方向，只允许整数 +1 或 -1。
 - joint_reference_angles_deg：关节参考角表，数值为 servo.reference_position 处的关节角，单位度；加载到 reference_joint_angle_rad 后使用弧度。
-- installed_joint_limits：安装后的关节角范围，单位度；不等于舵机原生 0～240°。
+- `installed_joint_limits` 保存各关节的软件命令角度范围，单位为度。
 
 其余可选安装字段也可部分填写：
 
@@ -301,7 +301,7 @@ cmake --build build/hexapod_core_standalone --parallel 1
 ctest --test-dir build/hexapod_core_standalone --output-on-failure
 ```
 
-测试覆盖真实 18 轴编号、500 零位、140～860 全整数范围往返及两侧边界拒绝、CAD 坐标/旋转方向/触点来源、旧配置未知项、两种符号和非零关节参考角、部分标定、量化越限、原生限位、非法数值、重复 JSON 键与安装变换冲突；FK 覆盖零位、正偏航、相对膝角、负俯仰、配置触点变化、非有限输入及无效模型拒绝。IK 正式测试覆盖独立零位、40 个伸直与 240 个普通姿态往返、近伸直分支、正负径向、多候选、反折周期去重、自由角、不可达与非法数值。合成标定和等长腿模型仅存在于测试内，不写回真实配置。
+测试覆盖真实 18 轴编号、500 零位、各轴命令整数范围往返及两侧边界拒绝、CAD 坐标/旋转方向/触点来源、旧配置未知项、两种符号和非零关节参考角、部分标定、量化越限、原生限位、非法数值、重复 JSON 键与安装变换冲突。FK 覆盖零位、正偏航、相对膝角、负俯仰、配置触点变化、非有限输入及无效模型拒绝。IK 正式测试覆盖独立零位、40 个伸直与 240 个普通姿态往返、近伸直分支、正负径向、多候选、反折周期去重、自由角、不可达与非法数值。合成标定和等长腿模型仅存在于测试内。
 
 Windows 编辑目录为 C:/Users/zengh/Documents/ChatGPT/hexapod/hexapod_ws/src/hexapod_core；树莓派目录为 /home/hexapod/hexapod_ws/src/hexapod_core。用户本地修改后明确要求同步时再上传，助手修改时维护双端版本；Windows 可用已有 GCC 进行本机离线编译测试，目标平台构建与验证仍在树莓派进行，不要求两端具备相同 ROS/ARM 环境。Windows 编辑器配置说明见工作区 docs/windows-vscode-workflow.md，部署验证结果见 docs/core-deployment-validation.md。该库及其测试均不打开串口或驱动舵机。
 

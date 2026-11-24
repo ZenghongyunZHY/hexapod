@@ -16,6 +16,7 @@
 - 两个工作区各自的 `build/`、`install/`、`log/` 和 Python 缓存。
 - `.pi_sync_baseline.json`：属于当前 Windows/Pi 配对的同步状态；克隆不能继承这台机器已完成同步的结论。
 - `.vscode/`：包含本机编译器路径、个人偏好和 Pi 任务，保留本地文件；克隆后按 `hexapod_ws/docs/windows-vscode-workflow.md` 配置。
+- `hexapod_remote/` 中的 Windows 操作台、Pi 端 Python 请求管理工具及其状态文件用于本地联调。
 - `references/cad/`、`references/datasheets/` 和 `outputs/LX225_spec-*.png`：第三方资料及页面截图，待确认分发权限后再决定是否上传。
 - 环境凭据文件、私钥和本机缓存。
 
@@ -25,7 +26,7 @@
 
 GitHub 推送不等于同步树莓派。本机新代码上传 GitHub 后，Pi 仍保留上次显式同步的版本；继续按既有双端哈希基线规则处理同步，不进行自动上传或目录镜像删除。
 
-Windows 可独立构建核心库，Pi 使用 `hexapod_ws/scripts/build_core.sh` 并显式设置 `MAKEFLAGS=-j1`。构建、离线测试和 Git 操作均不启动舵机动作。
+Windows 可独立构建核心库。Pi 单独验证核心库时使用 `hexapod_ws/scripts/build_core.sh`，并显式设置 `MAKEFLAGS=-j1`。完整 V1 采用 WSL ARM64 交叉编译、Pi 单任务生成 Jazzy 接口及链接安装的流程。构建、离线测试和 Git 操作均不启动舵机动作。 [构建流程](../hexapod_ws/docs/windows-vscode-workflow.md)
 
 正式测试源码随仓库保存。`build/` 下完整原始验证日志仍留在本机，长期结论见工作区 `docs/core-deployment-validation.md`，不能将克隆仓库视为包含全部本机审计记录。
 

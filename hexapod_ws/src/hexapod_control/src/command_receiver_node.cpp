@@ -2,6 +2,7 @@
 
 #include "hexapod_interfaces/msg/motion_command.hpp"
 #include "hexapod_interfaces/msg/planner_status.hpp"
+#include "hexapod_interfaces/msg/standing_reference.hpp"
 
 #include <rcl_interfaces/msg/parameter_descriptor.hpp>
 #include <rclcpp/executors/single_threaded_executor.hpp>
@@ -26,6 +27,7 @@ namespace {
 
 using hexapod_interfaces::msg::MotionCommand;
 using hexapod_interfaces::msg::PlannerStatus;
+using hexapod_interfaces::msg::StandingReference;
 using sensor_msgs::msg::Joy;
 
 constexpr std::int64_t nanoseconds_per_second = 1'000'000'000;
@@ -41,7 +43,13 @@ class command_receiver_node final : public rclcpp::Node {
         const auto qos = rclcpp::QoS(rclcpp::KeepLast(64)).reliable().durability_volatile();
         output_ = create_publisher<MotionCommand>("motion_command", qos);
         requests_ = create_subscription<MotionCommand>("command_request", qos, [this](MotionCommand::ConstSharedPtr msg) { on_request(*msg); });
-        status_ = create_subscription<PlannerStatus>("planner_status", qos, [this](PlannerStatus::ConstSharedPtr msg) { teleop_.planner_status(msg->command_sequence, msg->state); });
+        status_ = create_subscription<PlannerStatus>("planner_status", qos, [this](PlannerStatus::ConstSharedPtr msg) {
+            if (reference_ready_ && msg->standing_stamp == reference_stamp_) {
+                teleop_.planner_status(msg->command_sequence, msg->state);
+            }
+        });
+        const auto reference_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+        reference_ = create_subscription<StandingReference>("standing_reference", reference_qos, [this](StandingReference::ConstSharedPtr msg) { on_reference(*msg); });
         joy_ = create_subscription<Joy>("joy", rclcpp::SensorDataQoS(), [this](Joy::ConstSharedPtr msg) { on_joy(*msg); });
     }
 
@@ -111,17 +119,38 @@ class command_receiver_node final : public rclcpp::Node {
         publish(MotionCommand::STOP, now);
     }
 
-    void on_request(const MotionCommand& request) {
+    void on_reference(const StandingReference& message) {
         try {
             const nanoseconds now(system_clock_.now().nanoseconds());
-            const command_components values{request.vx_m_s, request.vy_m_s, request.wz_rad_s};
-            if (request.kind == MotionCommand::TELEOP) {
-                const auto stamp = require_fresh_stamp(request.stamp.sec, request.stamp.nanosec, now, timeout_);
-                publish_teleop(teleop_source::request, stamp, now, normalize_teleop(values));
+            const auto stamp = require_fresh_stamp(message.stamp.sec, message.stamp.nanosec, now, nanoseconds::max());
+            if (stamp <= reference_time_) {
                 return;
             }
-            if (request.stamp.sec != 0 || request.stamp.nanosec != 0) {
-                require_fresh_stamp(request.stamp.sec, request.stamp.nanosec, now, timeout_);
+            reference_time_ = stamp;
+            reference_stamp_ = message.stamp;
+            reference_ready_ = message.ready;
+            teleop_ = teleop_gate(timeout_);
+            last_joy_stamp_.reset();
+            stop_pressed_ = false;
+        } catch (const std::exception& error) {
+            RCLCPP_WARN_THROTTLE(get_logger(), system_clock_, 2000, "Standing reference ignored: %s", error.what());
+        }
+    }
+
+    void on_request(const MotionCommand& request) {
+        if (!reference_ready_) {
+            return;
+        }
+        try {
+            const nanoseconds now(system_clock_.now().nanoseconds());
+            const auto stamp = require_fresh_stamp(request.stamp.sec, request.stamp.nanosec, now, timeout_);
+            if (stamp <= reference_time_) {
+                return;
+            }
+            const command_components values{request.vx_m_s, request.vy_m_s, request.wz_rad_s};
+            if (request.kind == MotionCommand::TELEOP) {
+                publish_teleop(teleop_source::request, stamp, now, normalize_teleop(values));
+                return;
             }
             if (request.kind == MotionCommand::WALK_CYCLES) {
                 require_walk(values, request.cycle_count);
@@ -137,10 +166,13 @@ class command_receiver_node final : public rclcpp::Node {
     }
 
     void on_joy(const Joy& joy) {
+        if (!reference_ready_) {
+            return;
+        }
         try {
             const nanoseconds now(system_clock_.now().nanoseconds());
             const auto stamp = require_fresh_stamp(joy.header.stamp.sec, joy.header.stamp.nanosec, now, timeout_);
-            if (last_joy_stamp_ && stamp <= *last_joy_stamp_) {
+            if (stamp <= reference_time_ || (last_joy_stamp_ && stamp <= *last_joy_stamp_)) {
                 return;
             }
             if (last_joy_stamp_ && stamp - *last_joy_stamp_ >= timeout_) {
@@ -173,6 +205,9 @@ class command_receiver_node final : public rclcpp::Node {
     teleop_gate teleop_;
     command_sequence sequence_;
     rclcpp::Clock system_clock_{RCL_SYSTEM_TIME};
+    nanoseconds reference_time_{};
+    builtin_interfaces::msg::Time reference_stamp_;
+    bool reference_ready_ = false;
     nanoseconds last_output_stamp_{};
     std::optional<nanoseconds> last_joy_stamp_;
     bool stop_pressed_ = false;
@@ -180,6 +215,7 @@ class command_receiver_node final : public rclcpp::Node {
     rclcpp::Publisher<MotionCommand>::SharedPtr output_;
     rclcpp::Subscription<MotionCommand>::SharedPtr requests_;
     rclcpp::Subscription<PlannerStatus>::SharedPtr status_;
+    rclcpp::Subscription<StandingReference>::SharedPtr reference_;
     rclcpp::Subscription<Joy>::SharedPtr joy_;
 };
 

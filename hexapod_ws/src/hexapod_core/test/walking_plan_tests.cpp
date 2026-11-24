@@ -1,6 +1,7 @@
 #include "hexapod_core/walking_plan.hpp"
 #include "hexapod_core/joint_mapper.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -171,6 +172,88 @@ void test_failure_atomicity(const robot_model& model) {
         "quantized nominal FK must independently pass the requested terminal tolerance");
 }
 
+void test_profiled_walk_and_recovery(const robot_model& model) {
+    const leg_kinematics kinematics(model);
+    const joint_mapper mapper(model);
+    std::array<leg_joint_angles, leg_count> angles{};
+    std::array<vector3, leg_count> anchors{};
+    std::array<stance_midpoint_reference, leg_count> standing_xy{};
+    std::array<std::array<double, joints_per_leg>, leg_count> speed_limits{};
+    double ground_height_m = 0.0;
+    for (const auto leg : leg_order) {
+        const auto index = leg_index(leg);
+        const auto& ids = model.leg(leg).servo_ids;
+        const bool right = index < 3;
+        angles[index] = {
+            mapper.servo_position_to_joint_angle_rad(ids[0], servo_position(500)),
+            mapper.servo_position_to_joint_angle_rad(ids[1], servo_position(right ? 540 : 460)),
+            mapper.servo_position_to_joint_angle_rad(ids[2], servo_position(right ? 210 : 790))
+        };
+        const auto foot = kinematics.forward_in_body_frame(leg, angles[index]);
+        standing_xy[index] = {foot.x, foot.y};
+        anchors[index] = foot;
+        ground_height_m += foot.z / static_cast<double>(leg_count);
+        speed_limits[index].fill(1.0);
+    }
+    for (auto& anchor : anchors) {
+        anchor.z = ground_height_m;
+    }
+
+    const tripod_timing_request timing{14.4, 0.625};
+    const std::array<double, 6> distances_mm{41.0, 61.5, 72.0, 72.0, 61.5, 41.0};
+    tripod_sequence_schedule_request request{
+        {{{0.0, 0.0, 0.0}, 0.0}, gait_foot_state(anchors), angles, {}},
+        {},
+        standing_xy, ground_height_m,
+        {knee_singularity_policy::reject, branch_continuity_policy::keep_reference_branch},
+        speed_limits, 4, 0.001, 0.001, foot_clearance_policy{0.002, 0.002, 0.002},
+        tripod_walking_profile{2, 10, 0.035}
+    };
+    for (const double distance_mm : distances_mm) {
+        request.cycles.push_back({timing, 6, {distance_mm / (1000.0 * timing.period_s), 0.0, 0.0}, 0.04});
+    }
+    const stance_recovery_parameters recovery{timing, 6, 0.008, standing_xy, 0.001};
+    const auto result = walking_planner(model).plan(request, recovery);
+    require(result.status == walking_plan_status::checks_passed && result.solution, "profiled 349 mm sequence passes with recovery");
+    const auto& plan = *result.solution;
+    require(plan.full_cycle_count == 6 && plan.cycle_end_states.size() == 6 && plan.recovery_added
+        && plan.timeline.size() == 168, "six walking cycles and a separate recovery have 24 segments each");
+    double expected_x_m = 0.0;
+    for (std::size_t cycle = 0; cycle < distances_mm.size(); ++cycle) {
+        expected_x_m += distances_mm[cycle] / 1000.0;
+        require(gap(plan.cycle_end_states[cycle].body_pose.body_origin_in_planning_frame, {expected_x_m, 0.0, 0.0}) < 1e-12,
+            "walking profile preserves each velocity-derived body displacement");
+    }
+
+    int lowest_position = 1000;
+    int highest_position = 0;
+    for (std::size_t index = 0; index < plan.timeline.size(); ++index) {
+        const auto& segment = plan.timeline[index];
+        const auto frame = index % 24;
+        const long start_ms = std::lround(segment.start_time_s * 1000.0);
+        const long end_ms = std::lround(segment.end_time_s * 1000.0);
+        require(segment.cycle_index == index / 24 && segment.end_frame_index == frame + 1,
+            "profiled timeline preserves the frame and cycle correspondence");
+        const bool walking = segment.cycle_index < distances_mm.size();
+        const long duration_ms = walking
+            ? ((frame < 2 || (frame >= 12 && frame < 14)) ? 900 : 540)
+            : ((frame / 6) % 2 == 0 ? 300 : 900);
+        require(end_ms - start_ms == duration_ms, "walking uses the profile and recovery retains six segments per stage");
+        for (const auto& position : segment.nominal_positions) {
+            require(position.has_value(), "all 18 nominal targets are present");
+            lowest_position = std::min(lowest_position, position->value());
+            highest_position = std::max(highest_position, position->value());
+        }
+    }
+    require(lowest_position == 146 && highest_position == 848, "profile reproduces the validated nominal servo range");
+    require(std::lround(plan.timeline[143].end_time_s * 1000.0) == 86400
+        && std::lround(plan.timeline.back().end_time_s * 1000.0) == 100800,
+        "walk and recovery timing are preserved without an execution multiplier");
+    require(gap(plan.final_state.body_pose.body_origin_in_planning_frame, {0.349, 0.0, 0.0}) < 1e-12
+        && plan.final_state.body_pose.yaw_rad == 0.0, "recovery keeps the final walking pose");
+    verify_stance(model, plan.final_state, recovery, ground_height_m);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -179,7 +262,8 @@ int main(int argc, char** argv) {
         const auto model = robot_model::from_file(argv[1]);
         test_finite_walk_and_recovery(model);
         test_failure_atomicity(model);
-        std::cout << "PASS: finite walking timeline, cycle handoff, recovery, and atomic failures.\n";
+        test_profiled_walk_and_recovery(model);
+        std::cout << "PASS: finite and profiled walking, cycle handoff, recovery, and atomic failures.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

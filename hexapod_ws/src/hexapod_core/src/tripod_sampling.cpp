@@ -1,5 +1,6 @@
 #include "hexapod_core/tripod_sampling.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -30,25 +31,36 @@ void require_ordered_samples(const std::vector<tripod_cycle_sample>& samples) {
 }  // namespace
 
 std::vector<tripod_cycle_sample> make_tripod_cycle_samples(const tripod_timing_request& request, std::size_t intervals_per_stage) {
-    if (intervals_per_stage == 0) {
+    return make_tripod_cycle_samples(request, intervals_per_stage, intervals_per_stage);
+}
+
+std::vector<tripod_cycle_sample> make_tripod_cycle_samples(
+    const tripod_timing_request& request,
+    std::size_t double_support_intervals,
+    std::size_t swing_intervals) {
+    if (double_support_intervals == 0 || swing_intervals == 0) {
         throw std::invalid_argument("Each tripod stage requires at least one interval");
     }
 
-    
     const auto boundaries = make_tripod_cycle_boundaries(request);
-
     const std::size_t stage_count = boundaries.size() - 1;
 
     std::vector<tripod_cycle_sample> samples;
+    const auto intervals_for = [&](const tripod_boundary& start) {
+        const auto& starts_swing = start.begin_swing;
+        return std::find(starts_swing.begin(), starts_swing.end(), true) != starts_swing.end()
+            ? swing_intervals
+            : double_support_intervals;
+    };
 
-    // 总点数为：区间数量 × 每区间段数 + 初始点。
-    // 先检查除法形式的上限，避免乘法本身溢出。
-    if (intervals_per_stage > (samples.max_size() - 1) / stage_count) {
-        throw std::length_error("Tripod sample count exceeds container capacity");
+    std::size_t sample_count = 1;
+    for (std::size_t stage = 0; stage < stage_count; ++stage) {
+        const auto intervals = intervals_for(boundaries[stage]);
+        if (intervals > samples.max_size() - sample_count) {
+            throw std::length_error("Tripod sample count exceeds container capacity");
+        }
+        sample_count += intervals;
     }
-
-    const std::size_t sample_count = stage_count * intervals_per_stage + 1;
-
     samples.reserve(sample_count);
 
     // 初始点只保存一次，并保留可能存在的起脚事件。
@@ -59,6 +71,7 @@ std::vector<tripod_cycle_sample> make_tripod_cycle_samples(const tripod_timing_r
     for (std::size_t stage = 0; stage < stage_count; ++stage) {
         const auto& start = boundaries[stage];
         const auto& end = boundaries[stage + 1];
+        const auto intervals_per_stage = intervals_for(start);
 
         // 起点已经由前一个区间保存，从第一个内部点开始。
         for (std::size_t step = 1; step <= intervals_per_stage; ++step) {

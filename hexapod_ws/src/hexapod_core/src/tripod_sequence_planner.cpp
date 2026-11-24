@@ -50,7 +50,8 @@ tripod_sequence_result tripod_sequence_planner::plan(const tripod_sequence_reque
         first.path_interval_count,
         first.initial_foot_tolerance_m,
         request.continuation_foot_tolerance_m,
-        first.clearance_policy
+        first.clearance_policy,
+        feet.walking_profile
     });
 }
 
@@ -75,7 +76,8 @@ tripod_sequence_result tripod_sequence_planner::plan(const tripod_sequence_sched
             state.feet,
             request.midpoint_references_in_body,
             request.ground_height_m,
-            parameters.lift_height_m
+            parameters.lift_height_m,
+            request.walking_profile
         };
         const tripod_cycle_request cycle_request{
             feet,

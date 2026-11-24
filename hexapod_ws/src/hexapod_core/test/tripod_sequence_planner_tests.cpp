@@ -289,22 +289,32 @@ void test_later_segment_failure(const robot_model& model) {
 void test_repeat_entry(const robot_model& model) {
     const tripod_sequence_planner planner(model);
     auto request = example_schedule(model);
-    const auto first = single_cycle_request(request, 0);
+    auto first = single_cycle_request(request, 0);
     const auto first_parameters = request.cycles.front();
     request.cycles.assign(2, first_parameters);
-    const auto scheduled = planner.plan(request);
-    const auto repeated = planner.plan({first, 2, request.continuation_foot_tolerance_m});
-    require(scheduled.status == tripod_sequence_status::checks_passed && scheduled.solution
-        && repeated.status == tripod_sequence_status::checks_passed && repeated.solution
-        && scheduled.solution->cycles.size() == 2 && repeated.solution->cycles.size() == 2,
-        "uniform convenience entry preserves the established two-cycle result");
-    for (std::size_t index = 0; index < 2; ++index) {
-        const auto& expected = scheduled.solution->cycles[index];
-        const auto& actual = repeated.solution->cycles[index];
-        require(same_pose(actual.foot_cycle.final_pose, expected.foot_cycle.final_pose)
-            && actual.segments.size() == expected.segments.size(), "repeat matches schedule geometry and segment count");
-        for (std::size_t segment = 0; segment < expected.segments.size(); ++segment) {
-            require_same_joint_solution(actual.segments[segment], expected.segments[segment]);
+    const std::array<std::optional<tripod_walking_profile>, 2> profiles{
+        std::nullopt, tripod_walking_profile{2, 4, 0.001}
+    };
+    for (const auto& profile : profiles) {
+        request.walking_profile = profile;
+        first.foot_request.walking_profile = profile;
+        const auto scheduled = planner.plan(request);
+        const auto repeated = planner.plan({first, 2, request.continuation_foot_tolerance_m});
+        require(scheduled.status == tripod_sequence_status::checks_passed && scheduled.solution
+            && repeated.status == tripod_sequence_status::checks_passed && repeated.solution
+            && scheduled.solution->cycles.size() == 2 && repeated.solution->cycles.size() == 2,
+            "repeat entry accepts both legacy and profiled two-cycle requests");
+        for (std::size_t index = 0; index < 2; ++index) {
+            const auto& expected = scheduled.solution->cycles[index];
+            const auto& actual = repeated.solution->cycles[index];
+            if (profile) {
+                require(expected.segments.size() == 12, "the configured profile controls subdivision on both cycles");
+            }
+            require(same_pose(actual.foot_cycle.final_pose, expected.foot_cycle.final_pose)
+                && actual.segments.size() == expected.segments.size(), "repeat matches schedule geometry and segment count");
+            for (std::size_t segment = 0; segment < expected.segments.size(); ++segment) {
+                require_same_joint_solution(actual.segments[segment], expected.segments[segment]);
+            }
         }
     }
 }

@@ -35,13 +35,29 @@ void require_foot_cycle_request(const tripod_foot_cycle_request& request) {
     (void)advance_body_pose(request.initial_pose, request.velocity, 0.0);
 }
 
-}  // namespace
-
-tripod_foot_cycle plan_tripod_foot_cycle(const tripod_foot_cycle_request& request) {
+tripod_foot_cycle plan_foot_cycle(
+    const tripod_foot_cycle_request& request,
+    const std::array<vector3, leg_count>* yaw_roots_in_body) {
     require_foot_cycle_request(request);
 
-    //返回每个time_s对应的ratio和周期阶段
-    const auto samples = make_tripod_cycle_samples(request.timing, request.intervals_per_stage);
+    const auto& profile = request.walking_profile;
+    const double outward_offset_m = profile ? profile->outward_offset_m : 0.0;
+    if (!std::isfinite(outward_offset_m) || outward_offset_m < 0.0) {
+        throw std::invalid_argument("Outward swing offset must be finite and nonnegative");
+    }
+    if (outward_offset_m > 0.0 && !yaw_roots_in_body) {
+        throw std::invalid_argument("Outward swing requires the yaw roots in the body frame");
+    }
+    const double swing_amplitude_m = outward_offset_m > 0.0
+        ? std::hypot(outward_offset_m, request.lift_height_m)
+        : request.lift_height_m;
+    if (!std::isfinite(swing_amplitude_m)) {
+        throw std::overflow_error("Combined swing offset is not finite");
+    }
+
+    const auto samples = profile
+        ? make_tripod_cycle_samples(request.timing, profile->double_support_intervals, profile->swing_intervals)
+        : make_tripod_cycle_samples(request.timing, request.intervals_per_stage);
 
     const double stance_duration_s = request.timing.period_s * request.timing.stance_ratio;
     const double swing_duration_s = request.timing.period_s * (1.0 - request.timing.stance_ratio);
@@ -83,8 +99,25 @@ tripod_foot_cycle plan_tripod_foot_cycle(const tripod_foot_cycle_request& reques
                     //所以可以使用它作为摆动曲线参数的落点
                     const auto landing = plan_swing_landing_point(landing_request);
 
-                    //不断更新swings_[index]成员
-                    feet = feet.begin_swing(leg, landing, {0.0, 0.0, 1.0}, request.lift_height_m);
+                    vector3 lift_direction{0.0, 0.0, 1.0};
+                    if (outward_offset_m > 0.0) {
+                        // 起脚时确定水平外移方向，在本次摆动中保持固定。
+                        const auto root = body_to_planning_frame(pose, (*yaw_roots_in_body)[index]);
+                        const auto& anchor = feet.stance_points()[index];
+                        const double dx = anchor.x - root.x;
+                        const double dy = anchor.y - root.y;
+                        const double radial_distance_m = std::hypot(dx, dy);
+                        if (!std::isfinite(radial_distance_m) || radial_distance_m <= 0.0) {
+                            throw std::invalid_argument("Outward swing requires a finite, nonzero horizontal direction");
+                        }
+                        const double outward_ratio = outward_offset_m / swing_amplitude_m;
+                        lift_direction = {
+                            outward_ratio * (dx / radial_distance_m),
+                            outward_ratio * (dy / radial_distance_m),
+                            request.lift_height_m / swing_amplitude_m
+                        };
+                    }
+                    feet = feet.begin_swing(leg, landing, lift_direction, swing_amplitude_m);
 
                     phases[index] = {leg_phase::swing, 0.0};
                 }
@@ -138,6 +171,18 @@ tripod_foot_cycle plan_tripod_foot_cycle(const tripod_foot_cycle_request& reques
     const auto final_pose = frames.back().body_pose;
 
     return tripod_foot_cycle{std::move(frames), feet, final_pose};
+}
+
+}  // namespace
+
+tripod_foot_cycle plan_tripod_foot_cycle(const tripod_foot_cycle_request& request) {
+    return plan_foot_cycle(request, nullptr);
+}
+
+tripod_foot_cycle plan_tripod_foot_cycle(
+    const tripod_foot_cycle_request& request,
+    const std::array<vector3, leg_count>& yaw_roots_in_body) {
+    return plan_foot_cycle(request, &yaw_roots_in_body);
 }
 
 }  // namespace hexapod_core

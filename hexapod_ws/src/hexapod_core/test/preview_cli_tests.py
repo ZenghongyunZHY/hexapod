@@ -42,7 +42,7 @@ def main():
     require(reader.fieldnames == expected_header, "CSV must have exactly 25 ordered columns")
     rows = list(reader)
     require(len(rows) == 20, "CSV must contain all 20 segment endpoints")
-    minimum, maximum = config["servo"]["user_configured_position_limits"]
+    servo, mounting = (config[key] for key in ("servo", "mounting"))
     expected_initial = [500, 550, 200] * 3 + [500, 450, 800] * 3
     expected_moving_ids = {4, 5, 6}
     initial_x = -0.00004
@@ -66,11 +66,15 @@ def main():
         require(initial_x - 0.500001e-6 <= numbers["target_x_m"]
                 <= initial_x + 0.010 + 0.500001e-6, "ideal X outside planned range")
         positions = [int(row[f"p{servo}"]) for servo in range(1, 19)]
-        require(all(minimum <= position <= maximum for position in positions),
-                "position outside configured installed range")
-        for servo, position in enumerate(positions, start=1):
-            if servo not in expected_moving_ids:
-                require(position == expected_initial[servo - 1], "one of 15 fixed axes moved")
+        for servo_id, position in enumerate(positions, start=1):
+            axis = str(servo_id)
+            angle = mounting["joint_reference_angles_deg"][axis] + mounting["joint_angle_signs"][axis] * (
+                position - servo["reference_position"]) * servo["degrees_per_position_unit"]
+            limits = mounting["installed_joint_limits"][axis]
+            require(limits["min_deg"] - 1e-10 <= angle <= limits["max_deg"] + 1e-10,
+                    f"p{servo_id} outside its installed angular limits")
+            if servo_id not in expected_moving_ids:
+                require(position == expected_initial[servo_id - 1], "one of 15 fixed axes moved")
         moving_positions.append(tuple(positions[3:6]))
         error = math.sqrt(sum(
             (numbers[f"target_{axis}_m"] - numbers[f"nominal_{axis}_m"]) ** 2
