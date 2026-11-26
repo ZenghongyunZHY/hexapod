@@ -539,21 +539,15 @@
     "mounting_reference": "Baseplate three-hole line marked by user is the end reference of the fixed servo connection"
   },
   "references": {
-    "numbering_image": "references/hardware/servo-numbering.png",
-    "right_leg_orientation_image": "references/hardware/right-leg-mounting.jpg",
+    "numbering_image": "docs/v1-servo-numbering.svg",
     "full_assembly_step": "references/cad/Lm2-assembly.step",
     "baseplate_step": "references/cad/Lm2-baseplate.step",
     "assembly_dxf": "references/cad/Lm2-assembly.dxf",
     "servo_datasheet": "references/datasheets/LX-225-datasheet.pdf",
-    "assembled_leg_image": "references/hardware/assembled-leg.jpg",
-    "servo_L1_definition": "references/hardware/servo-L1-definition.jpg",
-    "coxa_L2_definition": "references/hardware/coxa-L2-definition.jpg",
-    "femur_gap_definition": "references/hardware/femur-connector-span.jpg",
-    "tibia_L3_definition": "references/hardware/tibia-L3-definition.jpg",
-    "base_mount_reference": "references/hardware/base-mount-reference.jpg",
+    "leg_geometry_schematic": "docs/v1-leg-geometry.svg",
     "measurement_data": "outputs/Lm2_leg_lengths.json",
     "reference_manifest": "references/manifest.json",
-    "desired_standing_pose": "references/hardware/desired-standing-pose.jpg"
+    "desired_standing_pose": "docs/v1-leg-geometry.svg"
   },
   "baseline_document": "docs/physical-baseline.md",
   "units": {
@@ -577,7 +571,7 @@
   ],
   "demo_candidate": {
     "status": "v2 fixed-frame candidate; user reports prior stance too low; revised parameters not physically verified",
-    "stance_reference": "references/hardware/desired-standing-pose.jpg",
+    "stance_reference": "docs/v1-leg-geometry.svg",
     "right_leg_positions": [
       500,
       550,

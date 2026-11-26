@@ -50,6 +50,6 @@ ctest --test-dir hexapod_ws/build/core --output-on-failure
 ## 项目文档
 
 - [V1 架构](hexapod_ws/docs/v1-architecture.md)记录步态设计、消息接口及后续 IMU 和误差调节的扩展约定。
-- [物理基准](hexapod_ws/docs/physical-baseline.md)与[硬件配置](hexapod_ws/config/robot_hardware.json)记录舵机映射、零位、限位和 CAD 几何参数。
+- [物理基准](hexapod_ws/docs/physical-baseline.md)与[硬件配置](hexapod_ws/config/robot_hardware.json)记录舵机映射、零位、限位和 CAD 几何参数。 [舵机编号示意图](docs/v1-servo-numbering.svg) · [单腿几何与站姿示意图](docs/v1-leg-geometry.svg)
 - [仓库文件说明](docs/github-repository.md)列出源码、资料及本机文件的分发范围。
 - [旧固定帧 Demo](ros2_ws/src/hexapod_demo/README.md)保留早期站立与步态实验。

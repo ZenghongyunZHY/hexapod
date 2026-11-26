@@ -12,7 +12,7 @@
 
 偏航摆幅由±20改为±35位置单位；抬腿大腿/小腿增量由25/10改为35/15。抬腿、落地300ms，前摆、回中400ms，各等待100ms；站姿过渡仍3000ms并等待600ms。仍为6个完整周期、12次行走摆动落地，随后分组回中，44帧首尾站姿相同。含通信预算的计划由40.4缩至32秒，实际时长受回读与补读影响。
 
-这些参数是按用户要求选定的候选帧，尚未实物验证；不是实测角度或机械限位。[使用说明](../ros2_ws/src/hexapod_demo/README.md) · [结构化记录](../outputs/fixed-demo-validation.json)。此前的 [20°初稿示意](../outputs/demo-standing-candidate.png) 是历史图，不代表当前v2参数。
+这些参数是按用户要求选定的候选帧，尚未实物验证。此前的 20° 初稿属于早期候选。 [使用说明](../ros2_ws/src/hexapod_demo/README.md) · [结构化记录](../outputs/fixed-demo-validation.json)
 
 ## 不动原因与修复
 

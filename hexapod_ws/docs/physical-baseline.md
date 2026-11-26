@@ -13,7 +13,7 @@
 - 右侧三条腿的舵机安装方向按用户草图；左侧三条腿与右侧镜像。
 - **从金属齿轮端沿动力轴看向舵机壳体，位置值由小变大，动力轴逆时针旋转。**
 - 2026-10-14 用户更正并确认：500 展开姿态下，右侧第二、第三段随位置值增大都向上；左侧第二、第三段都向下。这一更正覆盖此前“ID6 向下”的回答。
-- 站姿形态按用户后续[屈膝站姿草图](../references/hardware/desired-standing-pose.jpg)：大腿上抬，小腿斜向下落地，不采用大腿水平、小腿垂直的直角构型。草图没有标注精确角度。
+- 用户后续确认屈膝站姿为大腿上抬、小腿斜向下落地，原草图没有标注精确角度。 [屈膝站姿示意](../../docs/v1-leg-geometry.svg)
 - 上述转向是齿轮端观察到的舵机自身转向，不等于已确定每个关节在机身坐标系中的正负号。
 - 2026-10-21 用户明确确认实物未安装胶垫；当前理想触点采用金属脚端，长度沿用 CAD 金属端 L3=112.53 mm，不标记为实测尺寸。
 
@@ -26,11 +26,7 @@
 | 左中 | 13 | 14 | 15 |
 | 左后 | 16 | 17 | 18 |
 
-参考图已复制进项目，不依赖微信或剪贴板临时目录：
-
-- [编号与 500 展开姿态](../references/hardware/servo-numbering.png)
-- [右腿舵机朝向草图](../references/hardware/right-leg-mounting.jpg)
-- [实际腿部装配照片](../references/hardware/assembled-leg.jpg)
+公开图按已确认的舵机映射绘制。原始装配与方向资料随本机参考资料保存。 [舵机编号与 500 展开零位示意](../../docs/v1-servo-numbering.svg)
 
 ## 2. 舵机规格与角度定义
 
@@ -63,13 +59,7 @@
 
 机身坐标原点 → 第一转轴是**固定安装变换**，与三段腿长分开。用户底板图中所标三孔连线，是第一只舵机固定连接处的末端基准；可结合 L1 定位轴心，但完整偏移仍取决于孔位、朝向与高度，不能只用一个 L1 标量替代。
 
-对应原始标注图：
-
-- [L1 定义](../references/hardware/servo-L1-definition.jpg)
-- [L2 定义](../references/hardware/coxa-L2-definition.jpg)
-- [三孔跨度](../references/hardware/femur-connector-span.jpg)
-- [L3 定义](../references/hardware/tibia-L3-definition.jpg)
-- [底板安装末端基准](../references/hardware/base-mount-reference.jpg)
+关节轴心、固定安装变换和三段距离见[单腿几何示意](../../docs/v1-leg-geometry.svg)。
 
 ## 4. CAD 尺寸：用户授权作为 V1 理想模型
 
@@ -95,11 +85,9 @@
 - [完整 STEP 装配体](../references/cad/Lm2-assembly.step)
 - [独立底板 STEP](../references/cad/Lm2-baseplate.step)
 - [二维装配 DXF](../references/cad/Lm2-assembly.dxf)
-- [三段腿长测量数据](../outputs/Lm2_leg_lengths.json)
-- [左腿轴孔与装配位置数据](../outputs/Lm2_left_leg_axes.json)
-- [全部模型外廓测量数据](../outputs/Lm2_model_measurements.json)
-- [底板尺寸图](../outputs/Lm2_底板尺寸.png)
-- [零件孔位核对图](../outputs/Lm2_腿长孔位核对.png)
+- [三段腿长测量数据](../../outputs/Lm2_leg_lengths.json)
+- [左腿轴孔与装配位置数据](../../outputs/Lm2_left_leg_axes.json)
+- [全部模型外廓测量数据](../../outputs/Lm2_model_measurements.json)
 
 ## 5. 2026-10-18 确认的 V1 理想运动学模型
 

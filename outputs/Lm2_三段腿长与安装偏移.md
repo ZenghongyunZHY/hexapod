@@ -35,4 +35,4 @@ L1 不再额外叠加到第一段 L2；固定安装偏移是位置向量，不�
 - 商家 STEP：`C:\baidunetdiskdownload\021 Lm2六足机器人图纸\021 Lm2六足机器人图纸\三维STEP通用格式\Lm2六足机器人完整体.STEP`
 - 测量数据：[Lm2_leg_lengths.json](C:/Users/zengh/Documents/ChatGPT/hexapod/outputs/Lm2_leg_lengths.json)
 - 轴孔及装配位置原始数据：[Lm2_left_leg_axes.json](C:/Users/zengh/Documents/ChatGPT/hexapod/outputs/Lm2_left_leg_axes.json)
-- 零件孔位核对图：[Lm2_腿长孔位核对.png](C:/Users/zengh/Documents/ChatGPT/hexapod/outputs/Lm2_腿长孔位核对.png)
+- 公开图示包含各关节轴心和三段腿长关系。 [单腿几何示意](../docs/v1-leg-geometry.svg)

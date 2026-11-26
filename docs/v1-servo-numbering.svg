@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="565" viewBox="0 0 1000 565" role="img" aria-labelledby="title description">
+  <title id="title">V1 舵机编号与展开零位</title>
+  <desc id="description">六足机器人俯视原理示意，正 X 朝前，正 Y 朝左。每条腿从机身到足端依次标注偏航轴、大腿俯仰轴和小腿俯仰轴。右前 1、2、3，右中 4、5、6，右后 7、8、9，左前 10、11、12，左中 13、14、15，左后 16、17、18。位置 500 对应水平伸直展开零位。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1.1" fill="#dce6ed"/>
+    </pattern>
+    <marker id="axis-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 8 4 0 8 2 4Z" fill="#d9e9f4"/>
+    </marker>
+    <style>
+      text { font-family: system-ui, -apple-system, "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .title { fill: #183449; font-size: 30px; font-weight: 700; }
+      .subtitle { fill: #50677a; font-size: 17px; }
+      .link { fill: none; stroke: #8498a8; stroke-width: 9; stroke-linecap: round; }
+      .foot { fill: #50677a; stroke: #fff; stroke-width: 2.6; }
+      .leg-label { fill: #354f63; font-size: 20px; font-weight: 650; }
+      .pin { stroke: #fff; stroke-width: 2.6; }
+      .yaw { fill: #244663; }
+      .upper { fill: #087374; }
+      .lower { fill: #9d4618; }
+      .id { fill: #fff; font-size: 17px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+      .axis-label { fill: #d9e9f4; font-size: 17px; font-weight: 650; }
+      .legend-label { fill: #253e52; font-size: 18px; font-weight: 550; }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="563" rx="24" fill="#f8fbfd" stroke="#dce6ed" stroke-width="2"/>
+  <rect x="24" y="101" width="952" height="393" rx="16" fill="url(#grid)"/>
+  <text class="title" x="500" y="50" text-anchor="middle">V1 舵机编号与展开零位</text>
+  <text class="subtitle" x="500" y="80" text-anchor="middle">俯视原理示意 · 位置 500 对应水平伸直展开零位</text>
+
+  <path d="M456 167H544L611 228V372L544 433H456L389 372V228Z" fill="#17354a" stroke="#112b3e" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M465 183H535L593 236V364L535 417H465L407 364V236Z" fill="#224357" stroke="#527286" stroke-width="1.4" stroke-linejoin="round"/>
+  <g fill="none" stroke="#d9e9f4" stroke-width="2.3" marker-end="url(#axis-arrow)">
+    <path d="M500 300V241"/>
+    <path d="M500 300H442"/>
+  </g>
+  <circle cx="500" cy="300" r="4.5" fill="#d9e9f4"/>
+  <text class="axis-label" x="500" y="227" text-anchor="middle">+X 前</text>
+  <text class="axis-label" x="459" y="327" text-anchor="middle">+Y 左</text>
+  <text x="500" y="384" text-anchor="middle" fill="#d9e9f4" font-size="19" font-weight="650">机身</text>
+
+  <g id="right_front">
+    <path class="link" d="M594 222 762 114"/>
+    <circle class="foot" cx="762" cy="114" r="6.5"/>
+    <circle class="pin yaw" cx="594" cy="222" r="18"/>
+    <circle class="pin upper" cx="650" cy="186" r="18"/>
+    <circle class="pin lower" cx="706" cy="150" r="18"/>
+    <text class="id" x="594" y="228">1</text>
+    <text class="id" x="650" y="192">2</text>
+    <text class="id" x="706" y="156">3</text>
+    <text class="leg-label" x="784" y="120">右前</text>
+  </g>
+  <g id="right_middle">
+    <path class="link" d="M610 300H820"/>
+    <circle class="foot" cx="820" cy="300" r="6.5"/>
+    <circle class="pin yaw" cx="610" cy="300" r="18"/>
+    <circle class="pin upper" cx="680" cy="300" r="18"/>
+    <circle class="pin lower" cx="750" cy="300" r="18"/>
+    <text class="id" x="610" y="306">4</text>
+    <text class="id" x="680" y="306">5</text>
+    <text class="id" x="750" y="306">6</text>
+    <text class="leg-label" x="842" y="306">右中</text>
+  </g>
+  <g id="right_rear">
+    <path class="link" d="M594 378 762 486"/>
+    <circle class="foot" cx="762" cy="486" r="6.5"/>
+    <circle class="pin yaw" cx="594" cy="378" r="18"/>
+    <circle class="pin upper" cx="650" cy="414" r="18"/>
+    <circle class="pin lower" cx="706" cy="450" r="18"/>
+    <text class="id" x="594" y="384">7</text>
+    <text class="id" x="650" y="420">8</text>
+    <text class="id" x="706" y="456">9</text>
+    <text class="leg-label" x="784" y="492">右后</text>
+  </g>
+  <g id="left_front">
+    <path class="link" d="M406 222 238 114"/>
+    <circle class="foot" cx="238" cy="114" r="6.5"/>
+    <circle class="pin yaw" cx="406" cy="222" r="18"/>
+    <circle class="pin upper" cx="350" cy="186" r="18"/>
+    <circle class="pin lower" cx="294" cy="150" r="18"/>
+    <text class="id" x="406" y="228">10</text>
+    <text class="id" x="350" y="192">11</text>
+    <text class="id" x="294" y="156">12</text>
+    <text class="leg-label" x="216" y="120" text-anchor="end">左前</text>
+  </g>
+  <g id="left_middle">
+    <path class="link" d="M390 300H180"/>
+    <circle class="foot" cx="180" cy="300" r="6.5"/>
+    <circle class="pin yaw" cx="390" cy="300" r="18"/>
+    <circle class="pin upper" cx="320" cy="300" r="18"/>
+    <circle class="pin lower" cx="250" cy="300" r="18"/>
+    <text class="id" x="390" y="306">13</text>
+    <text class="id" x="320" y="306">14</text>
+    <text class="id" x="250" y="306">15</text>
+    <text class="leg-label" x="158" y="306" text-anchor="end">左中</text>
+  </g>
+  <g id="left_rear">
+    <path class="link" d="M406 378 238 486"/>
+    <circle class="foot" cx="238" cy="486" r="6.5"/>
+    <circle class="pin yaw" cx="406" cy="378" r="18"/>
+    <circle class="pin upper" cx="350" cy="414" r="18"/>
+    <circle class="pin lower" cx="294" cy="450" r="18"/>
+    <text class="id" x="406" y="384">16</text>
+    <text class="id" x="350" y="420">17</text>
+    <text class="id" x="294" y="456">18</text>
+    <text class="leg-label" x="216" y="492" text-anchor="end">左后</text>
+  </g>
+
+  <path d="M80 507H920" stroke="#d5e1e8" stroke-width="1.5"/>
+  <g>
+    <circle class="yaw" cx="237" cy="535" r="8"/>
+    <text class="legend-label" x="256" y="541">偏航轴</text>
+    <circle class="upper" cx="445" cy="535" r="8"/>
+    <text class="legend-label" x="464" y="541">大腿俯仰轴</text>
+    <circle class="lower" cx="692" cy="535" r="8"/>
+    <text class="legend-label" x="711" y="541">小腿俯仰轴</text>
+  </g>
+</svg>

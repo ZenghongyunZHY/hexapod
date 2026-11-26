@@ -29,4 +29,7 @@ Thumbs.db
 # Third-party source documents remain local until redistribution is confirmed.
 /references/cad/
 /references/datasheets/
-/outputs/LX225_spec-*.png
+
+# Raw hardware references and generated raster previews stay local.
+/references/hardware/
+/outputs/*.png

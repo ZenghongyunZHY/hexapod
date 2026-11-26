@@ -9,7 +9,7 @@
 - 当前源码、头文件、正式测试、离线示例、CMake 和 ROS 包描述。
 - 工作区硬件配置、物理基准、架构与验证记录、可复用构建脚本。
 - nlohmann/json 3.11.3 头文件、CMake 适配、版本来源和 MIT 许可证。
-- 开发约定、工作区入口、硬件说明照片、已有分析脚本，以及用于追溯模型的测量 JSON、结论和必要图示。
+- 开发约定、工作区入口、分析脚本、测量 JSON 和结论。公开配图采用经确认的 Pad 手绘示意图或为项目绘制的原创示意图。
 
 ## 本机保留
 
@@ -17,10 +17,11 @@
 - `.pi_sync_baseline.json`：属于当前 Windows/Pi 配对的同步状态；克隆不能继承这台机器已完成同步的结论。
 - `.vscode/`：包含本机编译器路径、个人偏好和 Pi 任务，保留本地文件；克隆后按 `hexapod_ws/docs/windows-vscode-workflow.md` 配置。
 - `hexapod_remote/` 中的 Windows 操作台、Pi 端 Python 请求管理工具及其状态文件用于本地联调。
-- `references/cad/`、`references/datasheets/` 和 `outputs/LX225_spec-*.png`：第三方资料及页面截图，待确认分发权限后再决定是否上传。
+- `references/hardware/` 保留实拍照片、原舵机编号截图及原始标注资料。`outputs/` 下的 PNG 核对图和渲染预览保留在本机。
+- `references/cad/` 与 `references/datasheets/` 保留第三方原始资料。
 - 环境凭据文件、私钥和本机缓存。
 
-忽略文件仅影响 Git 跟踪，不会删除上述本机文件。`references/manifest.json` 继续保留原始资料的哈希和来源记录；文档中指向未随仓库分发的原始资料的链接，在纯克隆环境中不可用。现有分析脚本保留历史输入路径，重跑 CAD 分析前需要自行准备原始资料并调整路径。
+本机文件按 Git 忽略规则保留。`references/manifest.json` 记录原始 CAD、规格书的来源及公开示意图路径。原始硬件配图的来源和哈希随本机资料保存。现有分析脚本保留历史输入路径，重跑 CAD 分析前需要准备原始资料并调整路径。
 
 ## 开发与验证边界
 
