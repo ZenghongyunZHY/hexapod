@@ -193,34 +193,40 @@ void test_profiled_walk_and_recovery(const robot_model& model) {
         standing_xy[index] = {foot.x, foot.y};
         anchors[index] = foot;
         ground_height_m += foot.z / static_cast<double>(leg_count);
-        speed_limits[index].fill(1.0);
+        speed_limits[index].fill(2.0);
     }
     for (auto& anchor : anchors) {
         anchor.z = ground_height_m;
     }
 
-    const tripod_timing_request timing{14.4, 0.625};
-    const std::array<double, 6> distances_mm{41.0, 61.5, 72.0, 72.0, 61.5, 41.0};
+    const tripod_timing_request timing{4.0, 0.55};
+    const std::array<double, 13> velocities_m_s{
+        0.00542, 0.01084, 0.01626, 0.02168, 0.02710, 0.03252, 0.03500,
+        0.03252, 0.02710, 0.02168, 0.01626, 0.01084, 0.00542
+    };
     tripod_sequence_schedule_request request{
         {{{0.0, 0.0, 0.0}, 0.0}, gait_foot_state(anchors), angles, {}},
         {},
         standing_xy, ground_height_m,
         {knee_singularity_policy::reject, branch_continuity_policy::keep_reference_branch},
         speed_limits, 4, 0.001, 0.001, foot_clearance_policy{0.002, 0.002, 0.002},
-        tripod_walking_profile{2, 10, 0.035}
+        tripod_walking_profile{1, 9, 0.025}
     };
-    for (const double distance_mm : distances_mm) {
-        request.cycles.push_back({timing, 6, {distance_mm / (1000.0 * timing.period_s), 0.0, 0.0}, 0.04});
+    for (const double velocity_m_s : velocities_m_s) {
+        request.cycles.push_back({timing, 9, {velocity_m_s, 0.0, 0.0}, 0.04});
     }
-    const stance_recovery_parameters recovery{timing, 6, 0.008, standing_xy, 0.001};
+    const stance_recovery_parameters recovery{{4.8, 2.0 / 3.0}, 4, 0.008, standing_xy, 0.001};
     const auto result = walking_planner(model).plan(request, recovery);
-    require(result.status == walking_plan_status::checks_passed && result.solution, "profiled 349 mm sequence passes with recovery");
+    require(result.status == walking_plan_status::checks_passed && result.solution, "140 mm peak route passes with recovery");
     const auto& plan = *result.solution;
-    require(plan.full_cycle_count == 6 && plan.cycle_end_states.size() == 6 && plan.recovery_added
-        && plan.timeline.size() == 168, "six walking cycles and a separate recovery have 24 segments each");
+    constexpr std::size_t segments_per_cycle = 20;
+    const auto walking_segments = velocities_m_s.size() * segments_per_cycle;
+    require(plan.full_cycle_count == velocities_m_s.size() && plan.cycle_end_states.size() == velocities_m_s.size()
+        && plan.recovery_added && plan.timeline.size() == walking_segments + 16,
+        "each walking cycle has 20 segments and the separate recovery has 16");
     double expected_x_m = 0.0;
-    for (std::size_t cycle = 0; cycle < distances_mm.size(); ++cycle) {
-        expected_x_m += distances_mm[cycle] / 1000.0;
+    for (std::size_t cycle = 0; cycle < velocities_m_s.size(); ++cycle) {
+        expected_x_m += velocities_m_s[cycle] * timing.period_s;
         require(gap(plan.cycle_end_states[cycle].body_pose.body_origin_in_planning_frame, {expected_x_m, 0.0, 0.0}) < 1e-12,
             "walking profile preserves each velocity-derived body displacement");
     }
@@ -229,27 +235,27 @@ void test_profiled_walk_and_recovery(const robot_model& model) {
     int highest_position = 0;
     for (std::size_t index = 0; index < plan.timeline.size(); ++index) {
         const auto& segment = plan.timeline[index];
-        const auto frame = index % 24;
+        const bool walking = index < walking_segments;
+        const auto cycle = walking ? index / segments_per_cycle : velocities_m_s.size();
+        const auto frame = walking ? index % segments_per_cycle : index - walking_segments;
         const long start_ms = std::lround(segment.start_time_s * 1000.0);
         const long end_ms = std::lround(segment.end_time_s * 1000.0);
-        require(segment.cycle_index == index / 24 && segment.end_frame_index == frame + 1,
+        require(segment.cycle_index == cycle && segment.end_frame_index == frame + 1,
             "profiled timeline preserves the frame and cycle correspondence");
-        const bool walking = segment.cycle_index < distances_mm.size();
-        const long duration_ms = walking
-            ? ((frame < 2 || (frame >= 12 && frame < 14)) ? 900 : 540)
-            : ((frame / 6) % 2 == 0 ? 300 : 900);
-        require(end_ms - start_ms == duration_ms, "walking uses the profile and recovery retains six segments per stage");
+        const long duration_ms = walking || (frame / 4) % 2 == 0 ? 200 : 400;
+        require(end_ms - start_ms == duration_ms, "walking and recovery preserve their phase timings");
         for (const auto& position : segment.nominal_positions) {
             require(position.has_value(), "all 18 nominal targets are present");
             lowest_position = std::min(lowest_position, position->value());
             highest_position = std::max(highest_position, position->value());
         }
     }
-    require(lowest_position == 146 && highest_position == 848, "profile reproduces the validated nominal servo range");
-    require(std::lround(plan.timeline[143].end_time_s * 1000.0) == 86400
-        && std::lround(plan.timeline.back().end_time_s * 1000.0) == 100800,
-        "walk and recovery timing are preserved without an execution multiplier");
-    require(gap(plan.final_state.body_pose.body_origin_in_planning_frame, {0.349, 0.0, 0.0}) < 1e-12
+    require(lowest_position == 111 && highest_position == 886,
+        "route nominal servo range was " + std::to_string(lowest_position) + " to " + std::to_string(highest_position));
+    require(std::lround(plan.timeline[walking_segments - 1].end_time_s * 1000.0) == 52000
+        && std::lround(plan.timeline.back().end_time_s * 1000.0) == 56800,
+        "walking lasts 52 seconds and recovery lasts 4.8 seconds");
+    require(gap(plan.final_state.body_pose.body_origin_in_planning_frame, {1.05056, 0.0, 0.0}) < 1e-12
         && plan.final_state.body_pose.yaw_rad == 0.0, "recovery keeps the final walking pose");
     verify_stance(model, plan.final_state, recovery, ground_height_m);
 }

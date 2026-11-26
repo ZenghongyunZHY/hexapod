@@ -95,12 +95,16 @@ void exercise_failure(serial_runtime& runtime) {
     for (const auto& event : runtime.drain_events()) {
         require(!std::holds_alternative<execution_report>(event), "failed transition accepted a motion request");
     }
-    runtime.request_confirmation();
-    require(!wait_event<standing_confirmation>(runtime, "read-only confirmation refusal").ready_stamp,
-            "legacy confirmation bypassed the failed transition");
     const auto retry = transition(runtime, true);
     require(retry > failed, "retry did not create a new readiness epoch");
     check_plan(runtime, retry, 110);
+    runtime.submit({111, wall_now() + 350ms, uniform(576), {{0, 160, uniform(577), true}}}, retry);
+    const auto accepted = wait_event<execution_report>(runtime, "continuation acceptance");
+    require(accepted.id == 111 && accepted.state == execution_state::accepted,
+            "continuation did not use the preceding plan's final target");
+    const auto completed = wait_event<execution_report>(runtime, "continuation completion");
+    require(completed.id == 111 && completed.state == execution_state::completed && completed.completed_segments == 1,
+            "continuation did not complete its UART action");
 }
 
 void exercise_timing_failure(serial_runtime& runtime, bool write_timeout) {
@@ -120,9 +124,23 @@ void exercise_timing_failure(serial_runtime& runtime, bool write_timeout) {
 }
 
 void exercise(const std::string& port, const std::string& hardware_config, const std::string& mode) {
+    if (mode == "probe") {
+        serial_runtime runtime({serial_mode::probe, port, hardware_config, {120ms, move_wire_time, 10ms}},
+                               [](const servo_positions&) {});
+        auto diagnostic = wait_event<link_diagnostic>(runtime, "connection or voltage diagnostic");
+        if (!diagnostic.millivolts) {
+            diagnostic = wait_event<link_diagnostic>(runtime, "voltage diagnostic");
+        }
+        require(diagnostic.millivolts == 7400, "probe did not report controller voltage");
+        require(!runtime.request_standing_transition(), "probe accepted standing transition");
+        runtime.submit({130, wall_now() + 350ms, uniform(550), {{0, 160, uniform(577), true}}});
+        const auto rejected = wait_event<execution_report>(runtime, "read-only plan refusal");
+        require(rejected.id == 130 && rejected.state == execution_state::rejected, "probe accepted a motion plan");
+        return;
+    }
     const auto timing_failure = mode == "write_timeout" || mode == "late_wake";
     const auto completion_margin = timing_failure ? 90ms : 10ms;
-    serial_runtime runtime({serial_mode::execute, port, hardware_config, std::nullopt, {120ms, move_wire_time, completion_margin},
+    serial_runtime runtime({serial_mode::execute, port, hardware_config, {120ms, move_wire_time, completion_margin},
                            uniform(550), 280ms}, [](const servo_positions&) {},
                            [](const servo_positions& measured, const servo_positions& nominal) {
                                auto allowed = nominal;

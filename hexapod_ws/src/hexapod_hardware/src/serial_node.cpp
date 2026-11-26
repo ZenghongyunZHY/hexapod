@@ -79,26 +79,23 @@ std::uint8_t wire_state(execution_state state) {
 }
 
 serial_mode load_mode(const std::string& mode) {
-  if (mode == "preview") return serial_mode::preview;
   if (mode == "probe") return serial_mode::probe;
   if (mode == "execute") return serial_mode::execute;
-  throw std::invalid_argument("mode must be preview, probe or execute");
+  throw std::invalid_argument("mode must be probe or execute");
 }
 
 class serial_node final : public rclcpp::Node {
  public:
   serial_node()
       : Node("hexapod_serial"), hardware_config_(parameter<std::string>("hardware_config", "")),
-        mode_name_(parameter<std::string>("mode", "preview")), device_(parameter<std::string>("serial_port", "")),
+        mode_name_(parameter<std::string>("mode", "execute")), device_(parameter<std::string>("serial_port", "")),
         model_(hexapod_core::robot_model::from_file(hardware_config_)), mapper_(model_), kinematics_(model_) {
     const auto mode = load_mode(mode_name_);
-    if (mode != serial_mode::preview && device_.empty()) {
+    if (device_.empty()) {
       throw std::invalid_argument("serial_port must be supplied for probe or execute mode");
     }
-    const auto preview = load_positions("preview_positions");
     const auto standing = mode == serial_mode::execute ? load_positions("standing_positions") : std::nullopt;
-    const auto wire_time = mode == serial_mode::preview ? 0ns : move_wire_time;
-    const execution_options options{milliseconds_parameter("send_advance_ms", 90, 1, 5000), wire_time,
+    const execution_options options{milliseconds_parameter("send_advance_ms", 90, 1, 5000), move_wire_time,
         milliseconds_parameter("completion_margin_ms", 5, 0, 1000),
         milliseconds_parameter("frame_lateness_ms", 25, 0, 1000),
         milliseconds_parameter("write_timeout_ms", 25, 1, 1000)};
@@ -110,15 +107,12 @@ class serial_node final : public rclcpp::Node {
     diagnostic_pub_ = create_publisher<DiagnosticArray>("diagnostics", 10);
     plan_sub_ = create_subscription<ServoPlan>("servo_plan", qos, [this](ServoPlan::ConstSharedPtr message) { receive_plan(*message); });
     stop_sub_ = create_subscription<PlanStop>("plan_stop", qos, [this](PlanStop::ConstSharedPtr message) { runtime_->request_stop(message->plan_id); });
-    runtime_ = std::make_unique<serial_runtime>(serial_settings{mode, device_, hardware_config_, preview, options, standing},
+    runtime_ = std::make_unique<serial_runtime>(serial_settings{mode, device_, hardware_config_, options, standing},
         [this](const servo_positions& positions) { validate_positions(positions); },
         [this](const servo_positions& measured, const servo_positions& nominal) { verify_standing(measured, nominal); });
-    if (mode == serial_mode::preview) {
-      confirm_service_ = create_service<Trigger>("confirm_standing", [this](std::shared_ptr<rmw_request_id_t> request_id,
-            std::shared_ptr<Trigger::Request>) { request_standing(confirm_service_, std::move(request_id), false); });
-    } else if (mode == serial_mode::execute) {
+    if (mode == serial_mode::execute) {
       transition_service_ = create_service<Trigger>("transition_to_standing", [this](std::shared_ptr<rmw_request_id_t> request_id,
-            std::shared_ptr<Trigger::Request>) { request_standing(transition_service_, std::move(request_id), true); });
+            std::shared_ptr<Trigger::Request>) { request_standing(std::move(request_id)); });
     }
     event_timer_ = create_wall_timer(5ms, [this] { publish_events(); });
     RCLCPP_INFO(get_logger(), "Serial node started in %s mode", mode_name_.c_str());
@@ -209,30 +203,24 @@ class serial_node final : public rclcpp::Node {
     runtime_->submit(std::move(plan), read_stamp(message.standing_stamp));
   }
 
-  void request_standing(const rclcpp::Service<Trigger>::SharedPtr& service, std::shared_ptr<rmw_request_id_t> request_id,
-                        bool transition) {
+  void request_standing(std::shared_ptr<rmw_request_id_t> request_id) {
     if (pending_confirmation_) {
       Trigger::Response response;
       response.success = false;
       response.message = "A standing operation is already in progress";
-      service->send_response(*request_id, response);
+      transition_service_->send_response(*request_id, response);
       return;
     }
-    if (transition) {
-      const auto stamp = runtime_->request_standing_transition();
-      if (!stamp) {
-        Trigger::Response response;
-        response.success = false;
-        response.message = "Standing transition is unavailable";
-        service->send_response(*request_id, response);
-        return;
-      }
-      publish_reference(false, *stamp);
-    } else {
-      runtime_->request_confirmation();
+    const auto stamp = runtime_->request_standing_transition();
+    if (!stamp) {
+      Trigger::Response response;
+      response.success = false;
+      response.message = "Standing transition is unavailable";
+      transition_service_->send_response(*request_id, response);
+      return;
     }
+    publish_reference(false, *stamp);
     pending_confirmation_ = std::move(request_id);
-    pending_service_ = service;
   }
 
   void publish(const execution_report& report) {
@@ -268,9 +256,8 @@ class serial_node final : public rclcpp::Node {
       Trigger::Response response;
       response.success = result.ready_stamp.has_value();
       response.message = result.reason;
-      pending_service_->send_response(*pending_confirmation_, response);
+      transition_service_->send_response(*pending_confirmation_, response);
       pending_confirmation_.reset();
-      pending_service_.reset();
     }
   }
 
@@ -334,9 +321,7 @@ class serial_node final : public rclcpp::Node {
   rclcpp::Publisher<DiagnosticArray>::SharedPtr diagnostic_pub_;
   rclcpp::Subscription<ServoPlan>::SharedPtr plan_sub_;
   rclcpp::Subscription<PlanStop>::SharedPtr stop_sub_;
-  rclcpp::Service<Trigger>::SharedPtr confirm_service_;
   rclcpp::Service<Trigger>::SharedPtr transition_service_;
-  rclcpp::Service<Trigger>::SharedPtr pending_service_;
   std::chrono::nanoseconds last_reference_stamp_{};
   std::shared_ptr<rmw_request_id_t> pending_confirmation_;
   std::unique_ptr<serial_runtime> runtime_;

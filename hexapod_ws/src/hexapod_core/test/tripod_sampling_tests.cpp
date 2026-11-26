@@ -50,30 +50,30 @@ void test_known_timeline() {
 }
 
 void test_different_stage_counts() {
-    const tripod_timing_request timing{14.4, 0.625};
+    const tripod_timing_request timing{4.0, 0.6};
     const auto boundaries = make_tripod_cycle_boundaries(timing);
-    const auto samples = make_tripod_cycle_samples(timing, 2, 10);
-    const std::array<std::size_t, 5> boundary_rows{0, 2, 12, 14, 24};
-    require(samples.size() == 25, "double support and swing each use their own interval count");
+    const auto samples = make_tripod_cycle_samples(timing, 1, 8);
+    const std::array<std::size_t, 5> boundary_rows{0, 1, 9, 10, 18};
+    require(samples.size() == 19, "double support and swing each use their own interval count");
     for (std::size_t stage = 0; stage + 1 < boundary_rows.size(); ++stage) {
         const auto start = boundary_rows[stage];
         const auto end = boundary_rows[stage + 1];
         require(samples[start].boundary.has_value(), "phase boundary retains its event");
         boundary_equal(*samples[start].boundary, boundaries[stage]);
-        const double segment_time_s = stage % 2 == 0 ? 0.9 : 0.54;
+        const double segment_time_s = stage % 2 == 0 ? 0.4 : 0.2;
         for (std::size_t index = start + 1; index <= end; ++index) {
             require(std::abs(samples[index].time_s - samples[index - 1].time_s - segment_time_s) < 1e-12,
-                "double support and swing use 900 ms and 540 ms segments");
+                "double support and swing use 400 ms and 200 ms segments");
             require(samples[index].boundary.has_value() == (index == end), "only exact stage endpoints have events");
         }
     }
     boundary_equal(*samples.back().boundary, boundaries.back());
 
-    const auto half = make_tripod_cycle_samples({14.4, 0.5}, 2, 10);
-    require(half.size() == 21 && half.front().boundary && half[10].time_s == 7.2 && half[10].boundary,
-        "half duty uses ten segments for both swing stages");
+    const auto half = make_tripod_cycle_samples({4.0, 0.5}, 1, 8);
+    require(half.size() == 17 && half.front().boundary && half[8].time_s == 2.0 && half[8].boundary,
+        "half duty uses eight segments for both swing stages");
     require(half.front().boundary->begin_swing[1]
-        && half[10].boundary->finish_swing[1] && half[10].boundary->begin_swing[0],
+        && half[8].boundary->finish_swing[1] && half[8].boundary->begin_swing[0],
         "half duty retains lift-off at time zero and the simultaneous handoff");
 }
 

@@ -218,21 +218,6 @@ void stop_uses_a_delayed_boundary() {
   expect(executor.advance(boundary_end), 1, execution_state::interrupted, 2);
 }
 
-void preview_uses_the_same_relative_clock() {
-  auto executor = make_executor({90ms, 0ns, 5ms, 25ms, 25ms});
-  executor.confirm(positions(400));
-  auto plan = make_plan();
-  plan.segments.resize(2);
-  expect(executor.admit(std::move(plan), wall_epoch, steady_epoch), 1, execution_state::accepted, 0);
-  const auto first = dispatch_frame(executor, 1, 0, steady_epoch + 160ms);
-  executor.mark_sent(first, steady_epoch + 165ms);
-  require(!executor.due(steady_epoch + 364ms), "Preview uses the synthetic write timestamp instead of the nominal phase");
-  const auto second = dispatch_frame(executor, 1, 1, steady_epoch + 365ms);
-  executor.mark_sent(second, steady_epoch + 370ms);
-  require(!executor.advance(steady_epoch + 574ms), "Preview waits the frame duration and margin");
-  expect(executor.advance(steady_epoch + 575ms), 1, execution_state::completed, 2);
-}
-
 void reordered_stop_and_fault() {
   auto executor = make_executor();
   executor.confirm(positions(400));
@@ -263,7 +248,6 @@ int main() {
     honor_transmitted_frames();
     distinguish_lateness_from_write_timeout();
     stop_uses_a_delayed_boundary();
-    preview_uses_the_same_relative_clock();
     reordered_stop_and_fault();
     std::cout << "Serial execution admission, clocks, boundary stop and fault tests passed\n";
     return 0;

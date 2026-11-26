@@ -13,7 +13,6 @@ namespace hexapod_control {
 // 从完整的运动学时间轴生成一批消息。发布时由调用方填写 motion_start。
 hexapod_interfaces::msg::ServoPlan make_servo_plan(
     const std::vector<hexapod_core::tripod_timed_segment>& timeline,
-    double scale,
     std::uint16_t min_move_duration_ms,
     std::uint16_t max_move_duration_ms,
     std::uint64_t plan_id,

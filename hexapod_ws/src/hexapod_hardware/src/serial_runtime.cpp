@@ -19,13 +19,12 @@ using namespace std::chrono_literals;
 using steady_clock = std::chrono::steady_clock;
 
 struct stop_request { std::uint64_t id; };
-struct confirmation_request {};
 struct transition_request {};
 struct plan_request {
   timed_plan plan;
   std::optional<std::chrono::nanoseconds> standing_stamp;
 };
-using serial_request = std::variant<plan_request, stop_request, confirmation_request, transition_request>;
+using serial_request = std::variant<plan_request, stop_request, transition_request>;
 
 std::chrono::nanoseconds wall_now() {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch());
@@ -78,7 +77,6 @@ class serial_runtime::implementation {
       : settings_(checked_settings(std::move(settings), validate_positions, validate_standing)),
         voltage_limits_(supply_limits_mv(settings_.hardware_config)),
         executor_(settings_.timing, std::move(validate_positions)), validate_standing_(std::move(validate_standing)),
-        preview_positions_(settings_.preview_positions),
         thread_([this] { run(); }) {}
 
   ~implementation() {
@@ -161,7 +159,7 @@ class serial_runtime::implementation {
   }
 
   void connect(monotonic_time now) {
-    if (settings_.mode == serial_mode::preview || controller_ || now < retry_at_) {
+    if (controller_ || now < retry_at_) {
       return;
     }
     try {
@@ -191,24 +189,6 @@ class serial_runtime::implementation {
     const auto positions = controller_->positions(started + query_positions_budget);
     const auto completed = steady_clock::now();
     return {positions, wall_now(), std::chrono::duration_cast<std::chrono::microseconds>(completed - started)};
-  }
-
-  void confirm_preview() {
-    if (settings_.mode != serial_mode::preview || executor_.has_plan() || !preview_positions_) {
-      emit(standing_confirmation{std::nullopt, "Standing confirmation requires an idle preview with explicit positions"});
-      return;
-    }
-    try {
-      executor_.confirm(*preview_positions_);
-    } catch (const std::exception& error) {
-      emit(executor_.fail(error.what(), steady_clock::now()));
-      invalidate_reference();
-      emit(standing_confirmation{std::nullopt, error.what()});
-      return;
-    }
-    std::lock_guard<std::mutex> lock(mutex_);
-    standing_stamp_ = next_reference_stamp();
-    events_.push_back(standing_confirmation{standing_stamp_, "Preview standing reference ready"});
   }
 
   void finish_transition(std::string reason, bool ready = false) {
@@ -294,8 +274,6 @@ class serial_runtime::implementation {
         if (!executor_.has_reference()) {
           invalidate_reference();
         }
-      } else {
-        confirm_preview();
       }
     }
   }
@@ -324,13 +302,8 @@ class serial_runtime::implementation {
     if (!frame) {
       return false;
     }
-    if (settings_.mode == serial_mode::preview) {
-      preview_positions_ = frame->positions;
-      executor_.mark_sent(*frame, steady_clock::now());
-    } else {
-      const auto written_at = send_move(frame->positions, frame->move_duration_ms, frame->write_deadline);
-      executor_.mark_sent(*frame, written_at);
-    }
+    const auto written_at = send_move(frame->positions, frame->move_duration_ms, frame->write_deadline);
+    executor_.mark_sent(*frame, written_at);
     return true;
   }
 
@@ -408,7 +381,6 @@ class serial_runtime::implementation {
   bool transition_active_ = false;
   std::optional<monotonic_time> readback_at_;
   std::optional<std::chrono::nanoseconds> standing_stamp_;
-  std::optional<servo_positions> preview_positions_;
   std::unique_ptr<servo_controller> controller_;
   monotonic_time retry_at_{};
   monotonic_time next_diagnostic_{};
@@ -434,7 +406,6 @@ void serial_runtime::submit(timed_plan plan, std::optional<std::chrono::nanoseco
   impl_->enqueue(plan_request{std::move(plan), standing_stamp});
 }
 void serial_runtime::request_stop(std::uint64_t id) { impl_->enqueue(stop_request{id}); }
-void serial_runtime::request_confirmation() { impl_->enqueue(confirmation_request{}); }
 std::optional<std::chrono::nanoseconds> serial_runtime::request_standing_transition() { return impl_->request_transition(); }
 std::vector<serial_event> serial_runtime::drain_events() { return impl_->drain_events(); }
 

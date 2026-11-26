@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="565" viewBox="0 0 1000 565" role="img" aria-labelledby="title description">
+  <title id="title">六足机器人交替三脚步态分组</title>
+  <desc id="description">俯视原理示意。机身坐标正 X 朝前，正 Y 朝左。A 组为右前、左中、右后腿，B 组为左前、右中、左后腿。图中腿长及关节位置仅用于说明分组。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1.1" fill="#dce6ed"/>
+    </pattern>
+    <marker id="axis-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 8 4 0 8 2 4Z" fill="#33536b"/>
+    </marker>
+    <style>
+      text { font-family: system-ui, -apple-system, "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .title { fill: #183449; font-size: 30px; font-weight: 700; }
+      .subtitle { fill: #50677a; font-size: 17px; }
+      .a { color: #006d6b; }
+      .b { color: #a44b1a; }
+      .link { fill: none; stroke: currentColor; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
+      .joint { fill: #ffffff; stroke: currentColor; stroke-width: 3.2; }
+      .foot { fill: currentColor; stroke: #ffffff; stroke-width: 2.8; }
+      .leg-label { fill: currentColor; font-size: 20px; font-weight: 650; }
+      .axis-label { fill: #33536b; font-size: 17px; font-weight: 650; }
+      .legend-label { fill: #253e52; font-size: 18px; font-weight: 550; }
+      .legend-letter { fill: #ffffff; font-size: 16px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="563" rx="24" fill="#f8fbfd" stroke="#dce6ed" stroke-width="2"/>
+  <rect x="24" y="101" width="952" height="392" rx="16" fill="url(#grid)"/>
+  <text class="title" x="500" y="50" text-anchor="middle">交替三脚步态分组</text>
+  <text class="subtitle" x="500" y="80" text-anchor="middle">俯视原理示意</text>
+
+  <g class="a">
+    <path class="link" d="M594 215 646 184 713 150 778 134"/>
+    <path class="link" d="M390 294H325 249 175"/>
+    <path class="link" d="M594 373 646 404 713 438 778 454"/>
+  </g>
+  <g class="b">
+    <path class="link" d="M406 215 354 184 287 150 222 134"/>
+    <path class="link" d="M610 294H675 751 825"/>
+    <path class="link" d="M406 373 354 404 287 438 222 454"/>
+  </g>
+
+  <path d="M457 166H543L609 221V367L543 422H457L391 367V221Z" fill="#e9f0f5" stroke="#5a7589" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M466 181H534L591 230V358L534 407H466L409 358V230Z" fill="#f5f9fc" stroke="#c5d4df" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="none" stroke="#33536b" stroke-width="2.2" marker-end="url(#axis-arrow)">
+    <path d="M500 294V229"/>
+    <path d="M500 294H438"/>
+  </g>
+  <circle cx="500" cy="294" r="5" fill="#33536b"/>
+  <text class="axis-label" x="500" y="215" text-anchor="middle">+X 前</text>
+  <text class="axis-label" x="456" y="322" text-anchor="middle">+Y 左</text>
+  <text x="500" y="374" text-anchor="middle" fill="#39576d" font-size="20" font-weight="650">机身</text>
+
+  <g class="a">
+    <circle class="joint" cx="594" cy="215" r="10"/>
+    <circle class="joint" cx="646" cy="184" r="8"/>
+    <circle class="joint" cx="713" cy="150" r="8"/>
+    <circle class="foot" cx="778" cy="134" r="7"/>
+    <circle class="joint" cx="390" cy="294" r="10"/>
+    <circle class="joint" cx="325" cy="294" r="8"/>
+    <circle class="joint" cx="249" cy="294" r="8"/>
+    <circle class="foot" cx="175" cy="294" r="7"/>
+    <circle class="joint" cx="594" cy="373" r="10"/>
+    <circle class="joint" cx="646" cy="404" r="8"/>
+    <circle class="joint" cx="713" cy="438" r="8"/>
+    <circle class="foot" cx="778" cy="454" r="7"/>
+    <text class="leg-label" x="802" y="140">右前</text>
+    <text class="leg-label" x="151" y="300" text-anchor="end">左中</text>
+    <text class="leg-label" x="802" y="460">右后</text>
+  </g>
+  <g class="b">
+    <circle class="joint" cx="406" cy="215" r="10"/>
+    <circle class="joint" cx="354" cy="184" r="8"/>
+    <circle class="joint" cx="287" cy="150" r="8"/>
+    <circle class="foot" cx="222" cy="134" r="7"/>
+    <circle class="joint" cx="610" cy="294" r="10"/>
+    <circle class="joint" cx="675" cy="294" r="8"/>
+    <circle class="joint" cx="751" cy="294" r="8"/>
+    <circle class="foot" cx="825" cy="294" r="7"/>
+    <circle class="joint" cx="406" cy="373" r="10"/>
+    <circle class="joint" cx="354" cy="404" r="8"/>
+    <circle class="joint" cx="287" cy="438" r="8"/>
+    <circle class="foot" cx="222" cy="454" r="7"/>
+    <text class="leg-label" x="198" y="140" text-anchor="end">左前</text>
+    <text class="leg-label" x="849" y="300">右中</text>
+    <text class="leg-label" x="198" y="460" text-anchor="end">左后</text>
+  </g>
+
+  <path d="M80 506H920" stroke="#d5e1e8" stroke-width="1.5"/>
+  <g>
+    <circle cx="212" cy="534" r="15" fill="#006d6b"/>
+    <text class="legend-letter" x="212" y="540" text-anchor="middle">A</text>
+    <text class="legend-label" x="237" y="540">右前 · 左中 · 右后</text>
+    <circle cx="610" cy="534" r="15" fill="#a44b1a"/>
+    <text class="legend-letter" x="610" y="540" text-anchor="middle">B</text>
+    <text class="legend-label" x="635" y="540">左前 · 右中 · 左后</text>
+  </g>
+</svg>

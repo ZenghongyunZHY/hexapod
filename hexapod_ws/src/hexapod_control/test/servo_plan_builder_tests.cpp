@@ -2,7 +2,6 @@
 
 #include <array>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -34,14 +33,14 @@ void run_tests() {
         targets[axis].emplace(static_cast<int>(500 + axis));
     }
 
-    // 50.125 ms * 4 = 200.5 ms. 相邻两段用取整后的共享边界。
+    // 相邻两段用取整后的共享边界，首段 200.75 ms 向上取整。
     const std::vector<tripod_timed_segment> timeline{
-        {0, 1, 0.0, 0.050125, targets},
-        {0, 2, 0.050125, 0.10025, targets},
-        {1, 1, 0.10025, 0.150375, targets},
-        {2, 1, 0.150375, 0.2005, targets}
+        {0, 1, 0.0, 0.20075, targets},
+        {0, 2, 0.20075, 0.40075, targets},
+        {1, 1, 0.40075, 0.60075, targets},
+        {2, 1, 0.60075, 0.80075, targets}
     };
-    const auto plan = make_servo_plan(timeline, 4.0, 190, 500, 42, initial, 2);
+    const auto plan = make_servo_plan(timeline, 190, 500, 42, initial, 2);
     require(plan.plan_id == 42 && plan.initial_positions == initial, "Plan reference differs");
     require(plan.motion_start.sec == 0 && plan.motion_start.nanosec == 0, "Builder set absolute time");
     require(plan.segments.size() == timeline.size(), "Plan lost a nominal sample");
@@ -55,50 +54,49 @@ void run_tests() {
             require(segment.positions[axis] == 500 + axis, "Servo position was changed or reordered");
         }
     }
-    require(accumulated_ms == 802, "Duration differs from rounded total");
-    require(plan.segments[0].move_duration_ms == 201 && plan.segments[1].move_duration_ms == 200, "Durations were rounded independently");
+    require(accumulated_ms == 801, "Duration differs from rounded total");
+    require(plan.segments[0].move_duration_ms == 201 && plan.segments[1].move_duration_ms == 200,
+        "Durations differ from their shared boundaries");
 
-    const auto recovery = make_servo_plan({{0, 1, 0.0, 0.25, targets}}, 1.0, 190, 500, 43, initial, 0);
+    const auto recovery = make_servo_plan({{0, 1, 0.0, 0.25, targets}}, 190, 500, 43, initial, 0);
     require(!recovery.segments.front().walking_cycle_end, "Recovery counted as walking");
 
     require_error<std::out_of_range>([&] {
-        make_servo_plan(timeline, 1.0, 190, 500, 42, initial, 2);
+        make_servo_plan({{0, 1, 0.0, 0.05, targets}}, 190, 500, 42, initial, 1);
     }, "Short interval was accepted");
     require_error<std::out_of_range>([&] {
-        make_servo_plan(timeline, 12.0, 190, 500, 42, initial, 2);
+        make_servo_plan({{0, 1, 0.0, 0.6, targets}}, 190, 500, 42, initial, 1);
     }, "Overlong interval was accepted");
     require_error<std::out_of_range>([&] {
-        make_servo_plan(timeline, 1.0, 1, 500, 42, initial, 2);
+        make_servo_plan({{0, 1, 0.0, 0.20075, targets}, {0, 2, 0.20075, 0.40125, targets}},
+            190, 500, 42, initial, 1);
     }, "Rounding shortened a segment below planned time");
     require_error<std::out_of_range>([&] {
-        make_servo_plan({{0, 1, 0.0, 5e6, targets}}, 1.0, 1, 500, 42, initial, 1);
+        make_servo_plan({{0, 1, 0.0, 5e6, targets}}, 1, 500, 42, initial, 1);
     }, "Overflowing millisecond offset was accepted");
-    require_error<std::invalid_argument>([&] {
-        make_servo_plan(timeline, std::numeric_limits<double>::infinity(), 190, 500, 42, initial, 2);
-    }, "Infinite scale was accepted");
 
     auto bad = timeline;
     bad.back().nominal_positions.back() = std::nullopt;
     require_error<std::invalid_argument>([&] {
-        make_servo_plan(bad, 4.0, 190, 500, 42, initial, 2);
+        make_servo_plan(bad, 190, 500, 42, initial, 2);
     }, "Missing position was accepted");
     bad = timeline;
     bad.back().cycle_index = 3;
     require_error<std::invalid_argument>([&] {
-        make_servo_plan(bad, 4.0, 190, 500, 42, initial, 2);
+        make_servo_plan(bad, 190, 500, 42, initial, 2);
     }, "Missing cycle index was accepted");
     bad = timeline;
     bad.back().start_time_s += 0.001;
     require_error<std::invalid_argument>([&] {
-        make_servo_plan(bad, 4.0, 190, 500, 42, initial, 2);
+        make_servo_plan(bad, 190, 500, 42, initial, 2);
     }, "Discontinuous interval was accepted");
     require_error<std::invalid_argument>([&] {
-        make_servo_plan(timeline, 4.0, 190, 500, 42, initial, 4);
+        make_servo_plan(timeline, 190, 500, 42, initial, 4);
     }, "Timeline with too few cycles was accepted");
     auto bad_initial = initial;
     bad_initial.back() = 1001;
     require_error<std::out_of_range>([&] {
-        make_servo_plan(timeline, 4.0, 190, 500, 42, bad_initial, 2);
+        make_servo_plan(timeline, 190, 500, 42, bad_initial, 2);
     }, "Invalid initial servo position was accepted");
 }
 

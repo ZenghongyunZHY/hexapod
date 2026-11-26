@@ -26,15 +26,20 @@ NEAR_APEX_FRACTION = (4 * BEFORE_APEX_PHASE * (1 - BEFORE_APEX_PHASE)) ** 3
 RECOVERY_DURATIONS = ([200] * 4 + [400] * 4) * 2
 FIRST_SPEED = 0.002847222222222222
 FORWARD_SPEED_LIMIT = 0.035
+TELEOP_REVERSE_SPEED = 0.035
+TELEOP_LATERAL_SPEED = 0.020
+TELEOP_YAW_SPEED = 0.20
 LINEAR_STEP = 0.00542
+YAW_STEP = 0.03
 RAMP_UP_SPEEDS = [step * LINEAR_STEP for step in range(1, 7)]
 FORWARD_CYCLE_SPEEDS = [*RAMP_UP_SPEEDS, FORWARD_SPEED_LIMIT, *reversed(RAMP_UP_SPEEDS)]
 
 
-def right_front_foot(config, values):
+def foot_in_body(config, values, leg, first_servo_id):
     servo, mounting, geometry = (config[key] for key in ("servo", "mounting", "model_geometry"))
     angles = []
-    for index, position in enumerate(values[:3], start=1):
+    first_index = first_servo_id - 1
+    for index, position in enumerate(values[first_index:first_index + 3], start=first_servo_id):
         key = str(index)
         relative = (position - servo["reference_position"]) * servo["degrees_per_position_unit"]
         angles.append(math.radians(mounting["joint_reference_angles_deg"][key] +
@@ -45,9 +50,13 @@ def right_front_foot(config, values):
     reach = geometry["first_leg_length"] + second * math.cos(pitch) + third * math.cos(pitch + knee)
     height = second * math.sin(pitch) + third * math.sin(pitch + knee)
     local = (reach * math.sin(yaw), -reach * math.cos(yaw), height)
-    transform = mounting["fixed_body_to_first_axis_transforms"]["right_front"]
+    transform = mounting["fixed_body_to_first_axis_transforms"][leg]
     return tuple(origin + sum(coefficient * value for coefficient, value in zip(row, local, strict=True))
                  for origin, row in zip(transform["translation_mm"], transform["rotation"], strict=True))
+
+
+def right_front_foot(config, values):
+    return foot_in_body(config, values, "right_front", 1)
 
 
 def check_plan(plan, config, cycles, recovery=None):
@@ -86,10 +95,10 @@ def check_plan(plan, config, cycles, recovery=None):
     return boundaries
 
 
-def check_landing(plan, config, boundary, velocity):
-    # At the cycle boundary the right-front leg lands at the nominal foot position in the projected
+def landing_error(plan, config, boundary, velocity, leg, first_servo_id):
+    # At the cycle boundary both right corner legs land at their nominal positions in the projected
     # body pose half a stance ahead. Express that target in the body frame at the actual cycle boundary.
-    x, y, _ = right_front_foot(config, STANDING)
+    x, y, _ = foot_in_body(config, STANDING, leg, first_servo_id)
     vx, vy, yaw_rate = velocity
     half_stance = WALK_PERIOD_S * WALK_DUTY / 2
     angle = yaw_rate * half_stance
@@ -98,8 +107,26 @@ def check_landing(plan, config, boundary, velocity):
     across = (1 - cosine) / yaw_rate if yaw_rate else 0
     expected = (cosine * x - sine * y + 1000 * (along * vx - across * vy),
                 sine * x + cosine * y + 1000 * (across * vx + along * vy))
-    measured = right_front_foot(config, plan.segments[boundary - 1].positions)[:2]
-    assert math.dist(measured, expected) <= 1.0, (boundary, measured, expected)
+    measured = foot_in_body(config, plan.segments[boundary - 1].positions, leg, first_servo_id)[:2]
+    return math.dist(measured, expected)
+
+
+def check_landing(plan, config, boundary, velocity):
+    error = landing_error(plan, config, boundary, velocity, "right_front", 1)
+    assert error <= 1.0, (boundary, velocity, error)
+
+
+def teleop_landing_error(plan, config, velocity):
+    return max(landing_error(plan, config, len(WALK_DURATIONS), velocity, leg, first_servo_id)
+               for leg, first_servo_id in (("right_front", 1), ("right_rear", 7)))
+
+
+def step_toward(previous, target):
+    dx, dy, dw = (after - before for before, after in zip(previous, target, strict=True))
+    linear = math.hypot(dx, dy)
+    fraction = min(1.0, LINEAR_STEP / linear if linear else 1.0, YAW_STEP / abs(dw) if dw else 1.0)
+    return target if fraction == 1.0 else (previous[0] + fraction * dx,
+                                          previous[1] + fraction * dy, previous[2] + fraction * dw)
 
 
 def check_forward_speeds(plan, config, boundaries, speeds):
@@ -132,7 +159,6 @@ def exercise(executable, hardware_config, child_log):
     import rclpy
     from hexapod_interfaces.msg import ExecutionStatus, MotionCommand, PlannerStatus, PlanStop, ServoPlan, StandingReference
     from rclpy.clock import Clock, ClockType
-    from rclpy.duration import Duration
     from rclpy.qos import DurabilityPolicy, QoSProfile
 
     config = json.loads(hardware_config.read_text(encoding="utf-8"))
@@ -140,7 +166,7 @@ def exercise(executable, hardware_config, child_log):
     args = [str(executable), "--ros-args", "-r", "__ns:=" + namespace,
             "-p", "hardware_config:=" + json.dumps(str(hardware_config)),
             "-p", "standing_positions:=" + json.dumps(STANDING), "-p", "plan_lead_ms:=1000",
-            "-p", "command_timeout_ms:=3000"]
+            "-p", "command_timeout_ms:=3500"]
     rclpy.init(args=[])
     fake = rclpy.create_node("fake_executor", namespace=namespace)
     clock = Clock(clock_type=ClockType.SYSTEM_TIME)
@@ -170,6 +196,9 @@ def exercise(executable, hardware_config, child_log):
 
     def walk(cycles, vx, vy=0.0, wz=0.0):
         return request(MotionCommand.WALK_CYCLES, vx_m_s=vx, vy_m_s=vy, wz_rad_s=wz, cycle_count=cycles)
+
+    def joystick(x, y, yaw):
+        return request(MotionCommand.TELEOP, vx_m_s=x, vy_m_s=y, wz_rad_s=yaw)
 
     def find_plan(request_sequence, after=0):
         for status in statuses:
@@ -216,6 +245,61 @@ def exercise(executable, hardware_config, child_log):
         wait_for(fake, rclpy, rejected, f"velocity limit rejection for {velocity}")
         assert "velocity limits" in rejected().reason
         assert not any(s.command_sequence == number and s.state == "planned" for s in statuses)
+
+    def hold_joystick(sample, target):
+        confirmed = reference()
+        number = joystick(*sample)
+        previous_id, previous_positions = 0, STANDING
+        speed = (0.0, 0.0, 0.0)
+        at_target = False
+        while True:
+            speed = step_toward(speed, target)
+            plan = get_plan(number, after=previous_id)
+            assert plan.standing_stamp == confirmed and list(plan.initial_positions) == previous_positions
+            check_plan(plan, config, 1, recovery=False)
+            error = teleop_landing_error(plan, config, speed)
+            assert error <= 1.0, (sample, speed, error)
+            accept(plan)
+            if at_target:
+                return plan, number
+            at_target = speed == target
+            reply(plan, ExecutionStatus.COMPLETED, len(plan.segments))
+            previous_id, previous_positions = plan.plan_id, list(plan.segments[-1].positions)
+
+    def finish_joystick_stop(current, number=None, reason=None):
+        if number is None:
+            number = request(MotionCommand.STOP)
+
+        def stopping():
+            return next((s for s in statuses if s.state == "stopping" and s.command_sequence == number), None)
+
+        wait_for(fake, rclpy, stopping, "joystick stop")
+        if reason is not None:
+            assert stopping().reason == reason
+
+        stop_plans = []
+        # The speed limits and increments bound the number of braking cycles.
+        for _ in range(9):
+            reply(current, ExecutionStatus.COMPLETED, len(current.segments))
+
+            def returned():
+                return any(s.state == "standing" and s.command_sequence == number for s in statuses)
+
+            def next_stop_plan():
+                return find_plan(number, after=current.plan_id)
+
+            wait_for(fake, rclpy, lambda: returned() or next_stop_plan(), "joystick braking or standing")
+            if returned():
+                return stop_plans
+            following = next_stop_plan()
+            assert list(following.initial_positions) == list(current.segments[-1].positions)
+            cycles = sum(segment.walking_cycle_end for segment in following.segments)
+            assert cycles in (0, 1)
+            check_plan(following, config, cycles, recovery=cycles == 0)
+            stop_plans.append(following)
+            accept(following)
+            current = following
+        raise AssertionError("Joystick stop did not finish braking and return to standing")
 
     try:
         with subprocess.Popen(args, stdout=child_log, stderr=subprocess.STDOUT) as process:
@@ -270,22 +354,61 @@ def exercise(executable, hardware_config, child_log):
                     boundary, = check_plan(directional, config, 1)
                     check_landing(directional, config, boundary, tuple(value * FIRST_SPEED / 0.005 for value in velocity))
 
-                confirmed = reference()
-                teleop = get_plan(request(MotionCommand.TELEOP, vx_m_s=0.6, vy_m_s=0.8, wz_rad_s=-0.5))
-                assert teleop.standing_stamp == confirmed and list(teleop.initial_positions) == STANDING
-                check_plan(teleop, config, 1, recovery=False)
+                reverse, _ = hold_joystick((-1.0, 0.0, 0.0), (-TELEOP_REVERSE_SPEED, 0.0, 0.0))
+                reverse_stop = finish_joystick_stop(reverse)
+                expected_brakes = [(-TELEOP_REVERSE_SPEED + step * LINEAR_STEP, 0.0, 0.0)
+                                   for step in range(1, 7)]
+                assert len(reverse_stop) == len(expected_brakes) + 1
+                for braking, speed in zip(reverse_stop[:-1], expected_brakes, strict=True):
+                    assert braking.segments[-1].walking_cycle_end
+                    error = teleop_landing_error(braking, config, speed)
+                    assert error <= 1.0, (speed, error)
+                assert not any(segment.walking_cycle_end for segment in reverse_stop[-1].segments)
 
-                reference()
-                # Seed a still-fresh sample so the filter approaches its target quickly. The second
-                # cycle distinguishes the joystick speed limit from the first cycle's step limit.
-                spin_for(fake, rclpy, 0.6)
-                stamp = (clock.now() - Duration(seconds=0.5)).to_msg()
-                teleop_sequence = request(MotionCommand.TELEOP, stamp=stamp, vx_m_s=1.0)
-                teleop_first = get_plan(teleop_sequence)
-                complete(teleop_first)
-                teleop_second = get_plan(teleop_sequence, after=teleop_first.plan_id)
-                boundaries = check_plan(teleop_second, config, 1, recovery=False)
-                check_forward_speeds(teleop_second, config, boundaries, [0.005])
+                mixed = (0.12, -0.16, 0.1)
+                mix_scale = 0.2 / 0.38
+                combined_speed = (mixed[0] * FORWARD_SPEED_LIMIT * mix_scale,
+                                  mixed[1] * TELEOP_LATERAL_SPEED * mix_scale,
+                                  mixed[2] * TELEOP_YAW_SPEED * mix_scale)
+                for sample, target in (
+                    ((0.0, 1.0, 0.0), (0.0, TELEOP_LATERAL_SPEED, 0.0)),
+                    ((0.0, -1.0, 0.0), (0.0, -TELEOP_LATERAL_SPEED, 0.0)),
+                    ((0.0, 0.0, 1.0), (0.0, 0.0, TELEOP_YAW_SPEED)),
+                    ((0.0, 0.0, -1.0), (0.0, 0.0, -TELEOP_YAW_SPEED)),
+                    (mixed, combined_speed),
+                ):
+                    active, _ = hold_joystick(sample, target)
+                    finish_joystick_stop(active)
+
+                peak = (FORWARD_SPEED_LIMIT, 0.0, 0.0)
+                current, _ = hold_joystick((1.0, 0.0, 0.0), peak)
+                turn_sequence = joystick(0.0, -1.0, 1.0)
+                # Deliver the new direction before advancing the fake executor past the cycle boundary.
+                spin_for(fake, rclpy, 0.1)
+                reply(current, ExecutionStatus.COMPLETED, len(current.segments))
+                turning = get_plan(turn_sequence, after=current.plan_id)
+                assert list(turning.initial_positions) == list(current.segments[-1].positions)
+                check_plan(turning, config, 1, recovery=False)
+                first_step = step_toward(peak, (0.0, -TELEOP_LATERAL_SPEED / 2.0, TELEOP_YAW_SPEED / 2.0))
+                # Reachability checking may shorten the change, or use the proven deceleration cycle.
+                choices = [tuple(before + factor * (after - before)
+                                 for before, after in zip(peak, first_step, strict=True))
+                           for factor in (1.0, 0.75, 0.5, 0.25)]
+                choices.append(step_toward(peak, (0.0, 0.0, 0.0)))
+                errors = [teleop_landing_error(turning, config, choice) for choice in choices]
+                assert min(errors) <= 1.0, (choices, errors)
+                accept(turning)
+                stopped_on_transition = any(s.state == "stopping" and s.command_sequence == turn_sequence
+                                            for s in statuses)
+                finish_joystick_stop(turning, number=turn_sequence if stopped_on_transition else None)
+
+                partial = (0.2, 0.0, 0.0)
+                speed = (partial[0] * FORWARD_SPEED_LIMIT, 0.0, 0.0)
+                current, _ = hold_joystick(partial, speed)
+                finish_joystick_stop(current, number=joystick(0.0, 0.0, 0.0), reason="joystick centered")
+
+                current, number = hold_joystick(partial, speed)
+                finish_joystick_stop(current, number=number, reason="teleop command expired")
             finally:
                 if process.poll() is None:
                     process.terminate()

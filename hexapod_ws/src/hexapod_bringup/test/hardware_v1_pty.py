@@ -198,6 +198,7 @@ def exercise(graph):
                and graph.late_plans.get_subscription_count()
                and graph.node.count_publishers("standing_reference")
                and graph.node.count_publishers("execution_status"), "three-node discovery")
+    assert graph.node.resolve_service_name("confirm_standing") not in dict(graph.node.get_service_names_and_types())
     graph.command(MotionCommand.WALK_CYCLES)
     graph.settle()
     assert not graph.commands and not board.moves
@@ -280,7 +281,7 @@ def main():
                   "lift_height_m": 0.003, "outward_offset_m": 0.0, "recovery_lift_height_m": 0.003,
                   "plan_lead_ms": 650, "linear_step_m_s": 0.0015}),
                 ("hexapod_hardware", "hexapod_serial",
-                 {"hardware_config": config, "standing_positions": STANDING, "mode": "execute",
+                 {"hardware_config": config, "standing_positions": STANDING,
                   "serial_port": board.device}),
             ):
                 executable = Path(get_package_prefix(package), "lib", package, name).resolve(strict=True)

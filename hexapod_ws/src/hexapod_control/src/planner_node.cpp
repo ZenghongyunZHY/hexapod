@@ -40,6 +40,8 @@ using positions = std::array<std::uint16_t, joint_count>;
 
 const planar_body_velocity zero_velocity{0.0, 0.0, 0.0};
 constexpr std::array<double, 3> finite_speed_limit_fractions{0.5694444444444444, 0.8541666666666666, 1.0};
+constexpr std::array<double, 4> teleop_step_fractions{1.0, 0.75, 0.5, 0.25};
+constexpr std::size_t max_teleop_braking_cycles = 32;
 const tripod_timing_request recovery_timing{4.8, 2.0 / 3.0};
 constexpr std::size_t recovery_intervals = 4;
 
@@ -81,7 +83,8 @@ double linear_speed(const planar_body_velocity& velocity) {
     return std::hypot(velocity.vx_m_s, velocity.vy_m_s);
 }
 
-planar_body_velocity teleop_velocity(const MotionCommand& message, double max_linear_speed, double max_yaw_speed) {
+planar_body_velocity teleop_velocity(const MotionCommand& message, double forward, double reverse,
+                                    double lateral, double yaw_speed) {
     const double x = message.vx_m_s;
     const double y = message.vy_m_s;
     const double yaw = message.wz_rad_s;
@@ -90,8 +93,14 @@ planar_body_velocity teleop_velocity(const MotionCommand& message, double max_li
     if (!std::isfinite(linear) || linear > 1.0 + roundoff || !std::isfinite(yaw) || std::abs(yaw) > 1.0) {
         throw std::invalid_argument("TELEOP requires normalized planar and yaw inputs");
     }
-    const double scale = std::max(1.0, linear);
-    return {(x / scale) * max_linear_speed, (y / scale) * max_linear_speed, yaw * max_yaw_speed};
+    const double weight = std::abs(x) + std::abs(y) + std::abs(yaw);
+    if (weight == 0.0) {
+        return zero_velocity;
+    }
+    // 保留杆量的幅值，组合输入沿同一归一化方向共享三个轴的行程预算。
+    const double fraction = std::min(1.0, std::max(linear, std::abs(yaw))) / weight;
+    return {fraction * x * (x >= 0.0 ? forward : reverse),
+            fraction * y * lateral, fraction * yaw * yaw_speed};
 }
 
 bool stopped(const planar_body_velocity& velocity) {
@@ -100,6 +109,12 @@ bool stopped(const planar_body_velocity& velocity) {
 
 planar_body_velocity scaled_velocity(const planar_body_velocity& velocity, double factor) {
     return {velocity.vx_m_s * factor, velocity.vy_m_s * factor, velocity.wz_rad_s * factor};
+}
+
+planar_body_velocity interpolate_velocity(const planar_body_velocity& from, const planar_body_velocity& to, double fraction) {
+    return {from.vx_m_s + fraction * (to.vx_m_s - from.vx_m_s),
+            from.vy_m_s + fraction * (to.vy_m_s - from.vy_m_s),
+            from.wz_rad_s + fraction * (to.wz_rad_s - from.wz_rad_s)};
 }
 
 planar_body_velocity approach_velocity(const planar_body_velocity& from, const planar_body_velocity& to, double linear_step, double yaw_step) {
@@ -114,7 +129,7 @@ planar_body_velocity approach_velocity(const planar_body_velocity& from, const p
     if (fraction == 1.0) {
         return to;
     }
-    return {from.vx_m_s + fraction * dx, from.vy_m_s + fraction * dy, from.wz_rad_s + fraction * yaw_delta};
+    return interpolate_velocity(from, to, fraction);
 }
 
 std::string planning_failure(const walking_plan_result& result) {
@@ -225,6 +240,9 @@ class planner_node final : public rclcpp::Node {
         max_forward_speed_ = number("max_forward_speed_m_s", std::max(0.035, max_linear_speed_),
                                     max_linear_speed_, 0.5);
         max_yaw_speed_ = number("max_yaw_speed_rad_s", 0.03, 0.000001, 5.0);
+        teleop_reverse_speed_ = number("teleop_reverse_speed_m_s", 0.035, 0.000001, 0.5);
+        teleop_lateral_speed_ = number("teleop_lateral_speed_m_s", 0.020, 0.000001, 0.5);
+        teleop_yaw_speed_ = number("teleop_yaw_speed_rad_s", 0.20, 0.000001, 5.0);
         linear_step_ = number("linear_step_m_s", std::clamp(0.00542, max_linear_speed_, max_forward_speed_),
                               0.000001, max_forward_speed_);
         yaw_step_ = number("yaw_step_rad_s", max_yaw_speed_, 0.000001, max_yaw_speed_);
@@ -234,7 +252,6 @@ class planner_node final : public rclcpp::Node {
         max_segment_ms_ = static_cast<std::uint16_t>(integer("max_segment_ms", 5000, min_segment_ms_, 65535));
         command_timeout_ = milliseconds(integer("command_timeout_ms", 500, 1, 30000));
         center_hold_ = milliseconds(integer("center_hold_ms", 150, 0, static_cast<int>(command_timeout_.count())));
-        filter_time_ms_ = number("teleop_filter_ms", 80.0, 1.0, 5000.0);
         lead_ = milliseconds(integer("plan_lead_ms", 350, 1, 30000));
         lookahead_ = milliseconds(integer("lookahead_ms", 1200, static_cast<int>(lead_.count()), 30000));
         feedback_grace_ = milliseconds(integer("feedback_grace_ms", 1000, 1, 30000));
@@ -369,7 +386,8 @@ class planner_node final : public rclcpp::Node {
             }
             auto command = message;
             if (message.kind == MotionCommand::TELEOP) {
-                const auto velocity = teleop_velocity(message, max_linear_speed_, max_yaw_speed_);
+                const auto velocity = teleop_velocity(message, max_forward_speed_, teleop_reverse_speed_,
+                                                     teleop_lateral_speed_, teleop_yaw_speed_);
                 command.vx_m_s = velocity.vx_m_s;
                 command.vy_m_s = velocity.vy_m_s;
                 command.wz_rad_s = velocity.wz_rad_s;
@@ -408,10 +426,8 @@ class planner_node final : public rclcpp::Node {
     void reset_mode() {
         mode_ = motion_mode::idle;
         target_ = zero_velocity;
-        filtered_ = zero_velocity;
         centered_at_.reset();
         input_expires_.reset();
-        filter_updated_.reset();
     }
 
     void invalidate(const std::string& reason) {
@@ -437,21 +453,11 @@ class planner_node final : public rclcpp::Node {
         report(command_sequence_, pending_.empty() ? 0 : pending_.front().id, "stopping", reason);
     }
 
-    void update_filter(monotonic_time now) {
-        if (mode_ != motion_mode::teleop || !filter_updated_ || !input_expires_) {
+    void update_teleop_stop(monotonic_time now) {
+        if (mode_ != motion_mode::teleop || !input_expires_) {
             return;
         }
         const auto valid_end = std::min(now, *input_expires_);
-        if (valid_end > *filter_updated_) {
-            const double elapsed = std::chrono::duration<double, std::milli>(valid_end - *filter_updated_).count();
-            const double alpha = -std::expm1(-elapsed / filter_time_ms_);
-            filtered_ = {
-                filtered_.vx_m_s + alpha * (target_.vx_m_s - filtered_.vx_m_s),
-                filtered_.vy_m_s + alpha * (target_.vy_m_s - filtered_.vy_m_s),
-                filtered_.wz_rad_s + alpha * (target_.wz_rad_s - filtered_.wz_rad_s)
-            };
-            filter_updated_ = valid_end;
-        }
         if (centered_at_ && valid_end >= *centered_at_ + center_hold_) {
             latch_stop("joystick centered");
         } else if (now >= *input_expires_) {
@@ -526,9 +532,7 @@ class planner_node final : public rclcpp::Node {
         if (mode_ == motion_mode::finite || mode_ == motion_mode::stopping) {
             return;
         }
-        // 同一批延迟送达的指令仍保留采样间隔。已经处理到的时间不回退。
-        const auto sample_time = std::max(input.sampled, filter_updated_.value_or(input.sampled));
-        update_filter(sample_time);
+        update_teleop_stop(input.sampled);
         if (mode_ == motion_mode::stopping || steady_clock::now() >= input.expires) {
             return;
         }
@@ -541,31 +545,63 @@ class planner_node final : public rclcpp::Node {
         command_sequence_ = cmd.sequence;
         target_ = centered ? zero_velocity : requested;
         if (centered && !centered_at_) {
-            centered_at_ = sample_time;
+            centered_at_ = input.sampled;
         } else if (!centered) {
             centered_at_.reset();
         }
         input_expires_ = input.expires;
-        filter_updated_ = sample_time;
+    }
+
+    tripod_sequence_schedule_request schedule(const tripod_sequence_initial_state& initial,
+                                              std::vector<tripod_sequence_cycle_parameters> cycles) const {
+        return {initial, std::move(cycles), stance_xy_, ground_height_m_,
+            {knee_singularity_policy::reject, branch_continuity_policy::keep_reference_branch},
+            speed_limits_, path_intervals_, standing_tolerance_m_, standing_tolerance_m_, clearance_,
+            walking_geometry_
+        };
+    }
+
+    stance_recovery_parameters recovery_parameters() const {
+        return {recovery_timing, recovery_intervals, recovery_lift_m_, stance_xy_, standing_tolerance_m_};
+    }
+
+    planar_body_velocity brake_step(const planar_body_velocity& velocity) const {
+        return approach_velocity(velocity, zero_velocity, linear_step_, yaw_step_);
+    }
+
+    ServoPlan plan_message(const walking_plan_solution& solution, const positions& initial, std::uint64_t id) const {
+        return make_servo_plan(solution.timeline, min_segment_ms_, max_segment_ms_, id,
+                               initial, solution.full_cycle_count);
+    }
+
+    bool can_stop_from(const tripod_sequence_initial_state& initial, const positions& initial_positions,
+                       const planar_body_velocity& velocity) const {
+        std::vector<tripod_sequence_cycle_parameters> braking;
+        for (auto next = brake_step(velocity); !stopped(next); next = brake_step(next)) {
+            if (braking.size() == max_teleop_braking_cycles) {
+                return false;
+            }
+            braking.push_back(cycle(next));
+        }
+        const auto stop = planner_.plan(schedule(initial, std::move(braking)), recovery_parameters());
+        if (!stop.solution) {
+            return false;
+        }
+        if (!stop.solution->timeline.empty()) {
+            (void)plan_message(*stop.solution, initial_positions, 0);
+        }
+        return true;
     }
 
     bool prepare(const boundary_state& begin, std::vector<tripod_sequence_cycle_parameters> cycles, bool recover,
                  plan_kind kind) {
         const auto end_velocity = recover ? zero_velocity : cycles.back().velocity;
-        const tripod_sequence_schedule_request request{
-            begin.gait, std::move(cycles), stance_xy_, ground_height_m_,
-            {knee_singularity_policy::reject, branch_continuity_policy::keep_reference_branch},
-            speed_limits_, path_intervals_, standing_tolerance_m_, standing_tolerance_m_, clearance_,
-            walking_geometry_
-        };
-        const auto recovery = recover ? std::optional<stance_recovery_parameters>{
-            stance_recovery_parameters{
-                recovery_timing, recovery_intervals, recovery_lift_m_,
-                stance_xy_, standing_tolerance_m_
-            }
-        } : std::nullopt;
-        auto result = planner_.plan(request, recovery);
+        const auto request = schedule(begin.gait, std::move(cycles));
+        auto result = recover ? planner_.plan(request, recovery_parameters()) : planner_.plan(request);
         if (!result.solution) {
+            if (kind == plan_kind::walking) {
+                return false;
+            }
             throw std::runtime_error(planning_failure(result));
         }
         auto& solution = *result.solution;
@@ -577,11 +613,17 @@ class planner_node final : public rclcpp::Node {
             }
             return false;
         }
-        if (kind == plan_kind::walking && (!input_expires_ || steady_clock::now() >= *input_expires_)) {
-            latch_stop("teleop expired during planning");
-            return false;
+        auto message = plan_message(solution, begin.servo_positions, next_plan_id_ + 1);
+        if (kind == plan_kind::walking) {
+            const bool stop_reachable = can_stop_from(solution.final_state, message.segments.back().positions, end_velocity);
+            if (!input_expires_ || steady_clock::now() >= *input_expires_) {
+                latch_stop("teleop expired during planning");
+                return false;
+            }
+            if (!stop_reachable) {
+                return false;
+            }
         }
-        auto message = make_servo_plan(solution.timeline, 1.0, min_segment_ms_, max_segment_ms_, ++next_plan_id_, begin.servo_positions, solution.full_cycle_count);
         message.standing_stamp = static_cast<builtin_interfaces::msg::Time>(*reference_watermark_);
         std::vector<cycle_checkpoint> checkpoints;
         if (kind == plan_kind::finite) {
@@ -605,6 +647,7 @@ class planner_node final : public rclcpp::Node {
         if (!pending_.empty() && start < now + lead_) {
             return false;
         }
+        ++next_plan_id_;
         const auto wall_start = pending_.empty() ? wall_now + rclcpp::Duration(lead_) : pending_.back().wall_end;
         message.motion_start = static_cast<builtin_interfaces::msg::Time>(wall_start);
         const auto& last = message.segments.back();
@@ -691,6 +734,25 @@ class planner_node final : public rclcpp::Node {
         }
     }
 
+    void prepare_teleop(const boundary_state& begin) {
+        const auto next = approach_velocity(begin.velocity, target_, linear_step_, yaw_step_);
+        if (stopped(target_) && stopped(next)) {
+            return;
+        }
+        for (const auto fraction : teleop_step_fractions) {
+            update_teleop_stop(steady_clock::now());
+            if (mode_ != motion_mode::teleop ||
+                (!pending_.empty() && pending_.back().end - steady_clock::now() < lead_)) {
+                return;
+            }
+            const auto velocity = fraction == 1.0 ? next : interpolate_velocity(begin.velocity, next, fraction);
+            if (prepare(begin, {cycle(velocity)}, false, plan_kind::walking)) {
+                return;
+            }
+        }
+        latch_stop("no reachable teleop cycle with a checked stop path");
+    }
+
     void tick() {
         auto now = steady_clock::now();
         for (const auto& plan : pending_) {
@@ -709,7 +771,7 @@ class planner_node final : public rclcpp::Node {
             }
         }
         now = steady_clock::now();
-        update_filter(now);
+        update_teleop_stop(now);
 
         if (!boundary_ || (mode_ != motion_mode::teleop && mode_ != motion_mode::stopping) ||
             pending_.size() >= 2 || plan_pub_->get_subscription_count() == 0) {
@@ -725,12 +787,9 @@ class planner_node final : public rclcpp::Node {
         const auto& begin = pending_.empty() ? *boundary_ : pending_.back().end_state;
         try {
             if (mode_ == motion_mode::teleop) {
-                const auto next = approach_velocity(begin.velocity, filtered_, linear_step_, yaw_step_);
-                if (!stopped(next) && (!stopped(target_) || !stopped(begin.velocity))) {
-                    prepare(begin, {cycle(next)}, false, plan_kind::walking);
-                }
+                prepare_teleop(begin);
             } else {
-                const auto next = approach_velocity(begin.velocity, zero_velocity, linear_step_, yaw_step_);
+                const auto next = brake_step(begin.velocity);
                 if (stopped(next)) {
                     prepare(begin, {}, true, plan_kind::recovery);
                 } else {
@@ -767,11 +826,13 @@ class planner_node final : public rclcpp::Node {
     double max_linear_speed_{};
     double max_forward_speed_{};
     double max_yaw_speed_{};
+    double teleop_reverse_speed_{};
+    double teleop_lateral_speed_{};
+    double teleop_yaw_speed_{};
     double linear_step_{};
     double yaw_step_{};
     double linear_deadband_{};
     double yaw_deadband_{};
-    double filter_time_ms_{};
     std::uint16_t min_segment_ms_{};
     std::uint16_t max_segment_ms_{};
     milliseconds command_timeout_{};
@@ -782,10 +843,8 @@ class planner_node final : public rclcpp::Node {
 
     motion_mode mode_{motion_mode::idle};
     planar_body_velocity target_ = zero_velocity;
-    planar_body_velocity filtered_ = zero_velocity;
     std::optional<monotonic_time> centered_at_;
     std::optional<monotonic_time> input_expires_;
-    std::optional<monotonic_time> filter_updated_;
     std::optional<rclcpp::Time> reference_watermark_;
     std::optional<rclcpp::Time> last_source_stamp_;
     std::optional<std::uint64_t> last_sequence_;

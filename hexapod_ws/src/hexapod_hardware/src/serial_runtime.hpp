@@ -12,14 +12,13 @@
 
 namespace hexapod_hardware {
 
-enum class serial_mode { preview, probe, execute };
+enum class serial_mode { probe, execute };
 enum class diagnostic_level : std::uint8_t { ok, warn, error };
 
 struct serial_settings {
   serial_mode mode;
   std::string device;
   std::string hardware_config;
-  std::optional<servo_positions> preview_positions;
   execution_options timing;
   std::optional<servo_positions> standing_positions = std::nullopt;
   std::chrono::milliseconds standing_transition_time{2000};
@@ -63,7 +62,6 @@ class serial_runtime {
 
   void submit(timed_plan plan, std::optional<std::chrono::nanoseconds> standing_stamp = std::nullopt);
   void request_stop(std::uint64_t id);
-  void request_confirmation();
   std::optional<std::chrono::nanoseconds> request_standing_transition();
   std::vector<serial_event> drain_events();
 

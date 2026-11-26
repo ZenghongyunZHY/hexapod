@@ -8,10 +8,10 @@
 namespace hexapod_control {
 namespace {
 
-std::uint32_t scaled_boundary_ms(double seconds, double scale) {
-    const double rounded = std::round(seconds * scale * 1000.0);
+std::uint32_t boundary_ms(double seconds) {
+    const double rounded = std::round(seconds * 1000.0);
     if (!std::isfinite(rounded) || rounded < 0.0 || rounded > std::numeric_limits<std::uint32_t>::max()) {
-        throw std::out_of_range("Scaled time does not fit a millisecond offset");
+        throw std::out_of_range("Time does not fit a millisecond offset");
     }
     return static_cast<std::uint32_t>(rounded);
 }
@@ -20,7 +20,6 @@ std::uint32_t scaled_boundary_ms(double seconds, double scale) {
 
 hexapod_interfaces::msg::ServoPlan make_servo_plan(
     const std::vector<hexapod_core::tripod_timed_segment>& timeline,
-    double scale,
     std::uint16_t min_move_duration_ms,
     std::uint16_t max_move_duration_ms,
     std::uint64_t plan_id,
@@ -29,9 +28,6 @@ hexapod_interfaces::msg::ServoPlan make_servo_plan(
 ) {
     if (timeline.empty() || timeline.size() > std::numeric_limits<std::uint32_t>::max()) {
         throw std::invalid_argument("Servo plan requires a nonempty, addressable timeline");
-    }
-    if (!std::isfinite(scale) || scale < 1.0) {
-        throw std::invalid_argument("Timing scale must be finite and at least one");
     }
     if (min_move_duration_ms == 0 || min_move_duration_ms > max_move_duration_ms) {
         throw std::invalid_argument("Invalid move duration bounds");
@@ -61,7 +57,7 @@ hexapod_interfaces::msg::ServoPlan make_servo_plan(
         }
 
         // 共享相邻段的整数毫秒边界，避免逐段取整造成累计误差。
-        const auto end_ms = scaled_boundary_ms(segment.end_time_s, scale);
+        const auto end_ms = boundary_ms(segment.end_time_s);
         if (end_ms <= start_ms) {
             throw std::out_of_range("Rounding collapsed segment " + std::to_string(index));
         }

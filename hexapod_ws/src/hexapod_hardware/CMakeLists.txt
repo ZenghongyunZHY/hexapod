@@ -48,12 +48,6 @@ if(BUILD_TESTING)
   hexapod_hardware_warnings(servo_controller_tests)
   add_test(NAME servo_protocol COMMAND servo_controller_tests)
 
-  add_executable(serial_runtime_tests test/serial_runtime_tests.cpp)
-  target_link_libraries(serial_runtime_tests PRIVATE hexapod_serial_runtime)
-  hexapod_hardware_warnings(serial_runtime_tests)
-  add_test(NAME serial_runtime_preview COMMAND serial_runtime_tests "${CMAKE_CURRENT_SOURCE_DIR}/../../config/robot_hardware.json")
-  set_tests_properties(serial_runtime_preview PROPERTIES TIMEOUT 12)
-
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_executable(serial_runtime_pty_tests test/serial_runtime_pty_tests.cpp)

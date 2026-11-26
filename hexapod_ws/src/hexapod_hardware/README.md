@@ -4,19 +4,8 @@
 
 | `mode` | 行为 |
 | --- | --- |
-| `preview`（默认） | 使用软件控制板按时间表执行；在确认服务前显式设置 `preview_positions`。 |
 | `probe` | 使用 `serial_port` 指定的设备执行只读电压探测。18 轴位置回读属于实机站姿过渡和验收。 |
-| `execute` | 使用 `serial_port` 指定的设备。首次执行和重连后通过 `/transition_to_standing` 建立站姿就绪。 |
-
-从已构建的 `hexapod_ws` 启动预览。下面的 18 轴值是软件测试夹具；规划器预览使用相同的 `standing_positions`。
-
-```bash
-source install/setup.bash
-ros2 run hexapod_hardware hexapod_serial --ros-args -p mode:=preview \
-  -p "hardware_config:=$PWD/config/robot_hardware.json" \
-  -p 'preview_positions:=[500,550,200,500,550,200,500,550,200,500,450,800,500,450,800,500,450,800]'
-ros2 service call /confirm_standing std_srvs/srv/Trigger '{}'
-```
+| `execute`（默认） | 使用 `serial_port` 指定的设备。首次执行和重连后通过 `/transition_to_standing` 建立站姿就绪。 |
 
 V1 执行模式使用 `standing_positions` 传入与规划器相同的 18 轴名义站姿。调用 `/transition_to_standing` 后撤销旧站姿和本地队列，等待板上已交付的帧结束，再一次发送 18 轴目标和 2000 ms 时长。操作者负责避碰。到期后回读 18 轴，每条腿的水平、高度偏差分别不超过 10 mm 才发布新的 `standing_reference` 就绪时刻。过渡期间丢弃运动与日常 STOP。后续计划携带该就绪时刻，执行器仅接受同一轮就绪生成的计划，从名义站姿开始核对计划起点。
 

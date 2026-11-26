@@ -119,6 +119,7 @@ def run_transition(executable, hardware_config, mode):
         try:
             buffer = bytearray()
             moves, read_times = [], []
+            voltage_queries = 0
             disconnect_at = None
             deadline = time.monotonic() + 8
             while child.poll() is None and time.monotonic() < deadline:
@@ -131,6 +132,7 @@ def run_transition(executable, hardware_config, mode):
                 buffer.extend(os.read(master, 4096))
                 for command, payload in packets(buffer):
                     if command == VOLTAGE_COMMAND:
+                        voltage_queries += 1
                         reply(master, command, struct.pack("<H", 7400))
                     elif command == POSITION_COMMAND:
                         assert tuple(payload) == (18, *SERVO_IDS)
@@ -158,6 +160,9 @@ def run_transition(executable, hardware_config, mode):
                     else:
                         raise AssertionError(command)
             assert child.wait(timeout=1) == 0
+            if mode == "probe":
+                assert voltage_queries >= 1 and not read_times and not moves
+                return
             if mode in ("write_timeout", "late_wake"):
                 if select.select((master,), (), (), 0.05)[0]:
                     buffer.extend(os.read(master, 4096))
@@ -170,7 +175,7 @@ def run_transition(executable, hardware_config, mode):
                 assert moves[2][0] - moves[1][0] >= 0.5, moves
                 transition_indices = (0, 2)
             else:
-                expected = [(280, 550), (280, 550), (160, 575), (160, 576)]
+                expected = [(280, 550), (280, 550), (160, 575), (160, 576), (160, 577)]
                 transition_indices = (0, 1)
             assert [(duration, position) for _, duration, position in moves] == expected, moves
             # Packet capture uses the fake board's independent scheduler clock.
@@ -191,6 +196,6 @@ if __name__ == "__main__":
         run_case(sys.argv[1], case)
         print(f"virtual UART {case} passed", flush=True)
     if len(sys.argv) == 4:
-        for mode in ("preempt", "failure", "write_timeout", "late_wake"):
+        for mode in ("preempt", "failure", "write_timeout", "late_wake", "probe"):
             run_transition(sys.argv[2], sys.argv[3], mode)
             print(f"virtual UART runtime {mode} passed", flush=True)

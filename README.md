@@ -1,21 +1,53 @@
-# Hexapod 六足机器人
+# Hexapod V1
 
-18 只幻尔 LX-225 总线舵机，Lm2 金属框架，计划使用树莓派、ROS 2 和 C++ 开发。
+基于树莓派 4B、ROS 2 Jazzy 和 C++17 的六足机器人。Lm2 金属机架搭载 18 只幻尔 LX-225 总线舵机，树莓派通过串口控制板执行六腿运动学规划生成的目标。V1 在无 IMU 的条件下运行交替三脚步态。
 
-当前开发工作区是 `hexapod_ws/`。开始涉及机器人几何、关节或舵机控制的开发前，先查阅：
+![六足机器人俯视原理图，标示机身坐标与交替支撑的两组三脚](docs/v1-schematic.svg)
 
-- [当前物理信息基准](hexapod_ws/docs/physical-baseline.md)：已确认的编号、安装方向、500 展开姿态、转向、腿长定义及待确认项。
-- [结构化硬件信息](hexapod_ws/config/robot_hardware.json)：程序可读取的编号与参数，未知项保留 `null`。
-- [原始资料清单](references/manifest.json)：已保存的照片、CAD 和规格书及校验值。
+## V1 实机验收
 
-CAD 测量值与实物确认值分开保存；当前采用已确认的 V1 CAD 理想模型，尚未完成全部实物尺寸标定。根目录 `config/`、`docs/` 中的同名副本保留历史状态，当前开发以工作区版本为准。
+2026 年 11 月 26 日，我在实机上完成前进、后退、横移、原地转向及停止收脚的调试，确认这些动作均正常。V1 也支持从当前姿态过渡到初始站姿、按指定周期数行走，以及用手柄输入组合平移和偏航。站姿验收会回读 18 轴位置，行走中由规划器检查关节限位和足端路径，并在完整周期边界安排减速与收脚。离线回归使用正式节点与虚拟串口。详见[开发和验收记录](hexapod_ws/docs/core-deployment-validation.md)。
 
-截至 2026-11-24，Pi 已安装 V1 的三个 ROS 2 节点，覆盖站姿过渡、固定周期路线、遥控和周期边界停止。固定周期纯前进的规划峰值为 4 s 周期内名义前移 140 mm，已通过三节点虚拟串口验证，带载与实际地面位移待实测。 [开发日志](hexapod_ws/docs/core-deployment-validation.md)
+### 默认运动参数
 
-GitHub 仓库提交范围与克隆后的注意事项见[仓库文件说明](docs/github-repository.md)。第三方 CAD、PDF、规格书页面截图保留在本机，不随仓库分发；资料清单中的路径和哈希用于追溯来源。构建与核心离线测试不需要这些原始资料。
+| 参数 | 默认值 |
+| --- | ---: |
+| 行走周期 | 4.0 s，20 段 × 200 ms |
+| 支撑占空比 | 0.55 |
+| 摆动脚抬升 / 外摆 | 40 mm / 25 mm |
+| 手柄纯前进 / 纯后退 | 0.035 m/s，每个峰值周期名义位移 140 mm |
+| 手柄纯横移 | 0.020 m/s |
+| 手柄纯偏航 | 0.20 rad/s |
 
-v1 当前规划：[运动学步态与误差调节扩展接口架构](hexapod_ws/docs/v1-architecture.md)。基于现有控制板，优先实现本地运动学、候选选择、步态与动作下发，保留可选 IMU 接口。2026-10-27 用户将角度回读闭环误差调节改为仅预留接口，到位标定与补偿实现后移；尚未实现的模块与运行频率仍需后续实现、验证。根目录 docs/v1-architecture.md 保留为历史方案，当前范围以工作区文档为准。
+手柄输入是归一化杆量，组合方向共享速度额度。指定周期路线直接使用物理速度和完整周期数。表中数值为配置与名义规划值，实机验收记录的是动作表现。
 
-Windows 在 `hexapod_ws/` 中编辑源码，Pi 保留对应的源码副本。完整 V1 由 WSL 交叉编译 ARM64，再在 Pi 单任务生成 Jazzy 接口、链接、安装和运行离线测试。 [VS Code 工作区](hexapod.code-workspace) · [Windows 工作流](hexapod_ws/docs/windows-vscode-workflow.md)
+## 软件结构
 
-固定帧演示：[站立与六周期步态](ros2_ws/src/hexapod_demo/README.md)。历史 demo 源码保留在本机 `ros2_ws/src/hexapod_demo`；2026-10-17 用户确认测试已完成后，树莓派上的旧 demo、编译与安装产物及测试日志已清理，ROS 2 和开发环境保留。随后已在树莓派工作区部署新的 `hexapod_core`。
+运行链路由 `hexapod_command`、`hexapod_planner` 和 `hexapod_serial` 三个 ROS 2 节点组成。规划器把运动指令转换为 18 轴分段目标，串口节点回报站姿就绪和执行状态。
+
+| 软件包 | 职责 |
+| --- | --- |
+| [`hexapod_core`](hexapod_ws/src/hexapod_core/) | 机器人几何、正逆运动学、交替三脚步态、关节与足端路径约束。可独立构建。 |
+| [`hexapod_control`](hexapod_ws/src/hexapod_control/) | 命令接收、手柄速度映射、周期规划、停止和收脚。 |
+| [`hexapod_hardware`](hexapod_ws/src/hexapod_hardware/) | 控制板协议、串口调度、站姿回读和执行回报。 |
+| [`hexapod_interfaces`](hexapod_ws/src/hexapod_interfaces/) | ROS 2 命令、计划和状态消息。 |
+| [`hexapod_bringup`](hexapod_ws/src/hexapod_bringup/) | 三节点虚拟串口集成测试。 |
+
+## 构建与测试
+
+在 Windows 上可以用 CMake、支持 C++17 的工具链和 Python 3 独立验证核心库。下面是 MinGW 的 PowerShell 示例，从仓库根目录运行。
+
+```powershell
+cmake -S hexapod_ws/src/hexapod_core -B hexapod_ws/build/core -G 'MinGW Makefiles' -DBUILD_TESTING=ON "-Dnlohmann_json_DIR=$PWD/hexapod_ws/dependencies/json-3.11.3/cmake"
+cmake --build hexapod_ws/build/core --parallel 1
+ctest --test-dir hexapod_ws/build/core --output-on-failure
+```
+
+完整 V1 使用 WSL 交叉编译 ARM64，在树莓派上生成 Jazzy 接口、单任务链接并安装。Windows 本地编辑入口为 `hexapod.code-workspace`。具体路径和构建约束见[双端工作流](hexapod_ws/docs/windows-vscode-workflow.md)。
+
+## 项目文档
+
+- [V1 架构](hexapod_ws/docs/v1-architecture.md)记录步态设计、消息接口及后续 IMU 和误差调节的扩展约定。
+- [物理基准](hexapod_ws/docs/physical-baseline.md)与[硬件配置](hexapod_ws/config/robot_hardware.json)记录舵机映射、零位、限位和 CAD 几何参数。
+- [仓库文件说明](docs/github-repository.md)列出源码与资料的分发范围。Windows 操作台、Pi 管理脚本和构建产物随本机环境维护。
+- [旧固定帧 Demo](ros2_ws/src/hexapod_demo/README.md)保留早期站立与步态实验。
