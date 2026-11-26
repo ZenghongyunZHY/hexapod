@@ -2,6 +2,8 @@
 
 基于树莓派 4B、ROS 2 Jazzy 和 C++17 的六足机器人。Lm2 金属机架搭载 18 只幻尔 LX-225 总线舵机，树莓派通过串口控制板执行六腿运动学规划生成的目标。V1 在无 IMU 的条件下运行交替三脚步态。
 
+> **本地调试工具**  项目开发时使用的 Windows 控制台和树莓派 Python 桥接器位于 `hexapod_remote/`，仅用于本地联调，源码留在本机。V1 的三个 ROS 2 核心节点可独立运行。你可以按自己的需求实现外层控制程序，通过 `command_request` 或 `joy` 话题接入 `hexapod_command`。 [控制节点接口](hexapod_ws/src/hexapod_control/README.md#命令接收节点)
+
 ![六足机器人俯视原理图，标示机身坐标与交替支撑的两组三脚](docs/v1-schematic.svg)
 
 ## V1 实机验收
@@ -49,5 +51,5 @@ ctest --test-dir hexapod_ws/build/core --output-on-failure
 
 - [V1 架构](hexapod_ws/docs/v1-architecture.md)记录步态设计、消息接口及后续 IMU 和误差调节的扩展约定。
 - [物理基准](hexapod_ws/docs/physical-baseline.md)与[硬件配置](hexapod_ws/config/robot_hardware.json)记录舵机映射、零位、限位和 CAD 几何参数。
-- [仓库文件说明](docs/github-repository.md)列出源码与资料的分发范围。Windows 操作台、Pi 管理脚本和构建产物随本机环境维护。
+- [仓库文件说明](docs/github-repository.md)列出源码、资料及本机文件的分发范围。
 - [旧固定帧 Demo](ros2_ws/src/hexapod_demo/README.md)保留早期站立与步态实验。
